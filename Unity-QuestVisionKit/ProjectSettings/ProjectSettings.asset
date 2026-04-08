@@ -845,7 +845,7 @@ PlayerSettings:
   webWasm2023: 0
   webEnableSubmoduleStrippingCompatibility: 0
   scriptingDefineSymbols:
-    Android: ISDK_OPENXR_HAND;USE_INPUT_SYSTEM_POSE_CONTROL;USE_STICK_CONTROL_THUMBSTICKS;APP_UI_EDITOR_ONLY
+    Android: ISDK_OPENXR_HAND;USE_INPUT_SYSTEM_POSE_CONTROL;USE_STICK_CONTROL_THUMBSTICKS;APP_UI_EDITOR_ONLY;ZXING_ENABLED
     EmbeddedLinux: 
     GameCoreScarlett: 
     GameCoreXboxOne: 
@@ -855,11 +855,11 @@ PlayerSettings:
     PS5: 
     QNX: 
     ReservedCFE: 
-    Standalone: ISDK_OPENXR_HAND;USE_INPUT_SYSTEM_POSE_CONTROL;USE_STICK_CONTROL_THUMBSTICKS
+    Standalone: ISDK_OPENXR_HAND;USE_INPUT_SYSTEM_POSE_CONTROL;USE_STICK_CONTROL_THUMBSTICKS;ZXING_ENABLED
     VisionOS: 
     Windows Store Apps: USE_INPUT_SYSTEM_POSE_CONTROL;USE_STICK_CONTROL_THUMBSTICKS
     XboxOne: 
-    iPhone: 
+    iPhone: ZXING_ENABLED
     tvOS: 
   additionalCompilerArguments: {}
   platformArchitecture: {}
@@ -882,7 +882,7 @@ PlayerSettings:
   m_RenderingPath: 1
   m_MobileRenderingPath: 1
   metroPackageName: Unity-QuestVisionKit
-  metroPackageVersion: 
+  metroPackageVersion: 1.0.0.0
   metroCertificatePath: 
   metroCertificatePassword: 
   metroCertificateSubject: 
@@ -890,7 +890,7 @@ PlayerSettings:
   metroCertificateNotAfter: 0000000000000000
   metroApplicationDescription: Unity-QuestVisionKit
   wsaImages: {}
-  metroTileShortName: 
+  metroTileShortName: Unity-QuestVisionKit
   metroTileShowName: 0
   metroMediumTileShowName: 0
   metroLargeTileShowName: 0
