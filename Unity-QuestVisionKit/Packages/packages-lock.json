@@ -314,6 +314,14 @@
       },
       "url": "https://packages.unity.com"
     },
+    "jp.keijiro.apriltag": {
+      "version": "file:jp.keijiro.apriltag@6b9a0806c651",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {
+        "com.unity.burst": "1.6.5"
+      }
+    },
     "com.unity.modules.accessibility": {
       "version": "1.0.0",
       "depth": 0,

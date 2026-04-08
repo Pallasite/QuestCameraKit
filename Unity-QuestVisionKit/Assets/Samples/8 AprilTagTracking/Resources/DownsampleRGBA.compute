@@ -1,0 +1,34 @@
+#pragma kernel CSMain
+
+// Input texture (read-only)
+Texture2D<float4> _Input;
+// Output texture (RGBA for AprilTag's ImageConverter which reads the green channel)
+RWTexture2D<float4> _Output;
+
+// Dimensions of the input and output textures.
+int _InputWidth;
+int _InputHeight;
+int _OutputWidth;
+int _OutputHeight;
+
+[numthreads(8,8,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_OutputWidth || id.y >= (uint)_OutputHeight)
+        return;
+
+    // Map output pixel coordinates back to input coordinates.
+    float ratioX = (float)_InputWidth / _OutputWidth;
+    float ratioY = (float)_InputHeight / _OutputHeight;
+    int inputX = (int)(id.x * ratioX);
+    int inputY = (int)(id.y * ratioY);
+
+    // Load the input pixel.
+    float4 color = _Input.Load(int3(inputX, inputY, 0));
+    // Compute grayscale value.
+    float gray = dot(color.rgb, float3(0.299, 0.587, 0.114));
+
+    // Write grayscale into all channels so AprilTag's ImageConverter
+    // (which reads the green channel) gets the correct luminance value.
+    _Output[int2(id.x, id.y)] = float4(gray, gray, gray, 1.0);
+}
