@@ -7,7 +7,7 @@ using UnityEngine;
 /// </summary>
 public class AnchoredContentController : MonoBehaviour
 {
-    [SerializeField] private TextMeshPro label;
+    [SerializeField] private TMP_Text label;
 
     [Tooltip("Keep the label facing the user. Applies only to the label transform.")]
     [SerializeField] private bool billboardLabel = true;
