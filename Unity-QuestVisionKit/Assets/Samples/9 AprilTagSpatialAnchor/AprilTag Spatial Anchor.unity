@@ -2403,6 +2403,60 @@ Transform:
   - {fileID: 439708784}
   m_Father: {fileID: 684282153}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &424251732
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 424251734}
+  - component: {fileID: 424251733}
+  m_Layer: 0
+  m_Name: April Tag Anchors
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &424251733
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 424251732}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 386ff6c73d86eaf448c0cb70b6f2f2dc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AprilTagAnchorManager
+  displayManager: {fileID: 665711653}
+  anchoredContentPrefab: {fileID: 7985637374133528724, guid: 252fac5cf6017c3479438eb76d0a64a6, type: 3}
+  cameraAnchor: {fileID: 138638053}
+  allowedTagIds: 
+  maxAnchorCommitDistanceMeters: 1
+  windowSize: 10
+  maxPositionSpreadMeters: 0.005
+  maxRotationSpreadDegrees: 2
+  maxObservationAgeSeconds: 0.5
+  oneShotPerTag: 1
+--- !u!4 &424251734
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 424251732}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &439708783
 GameObject:
   m_ObjectHideFlags: 0
@@ -11939,3 +11993,4 @@ SceneRoots:
   - {fileID: 973052204025592260}
   - {fileID: 665711654}
   - {fileID: 336238422}
+  - {fileID: 424251734}
