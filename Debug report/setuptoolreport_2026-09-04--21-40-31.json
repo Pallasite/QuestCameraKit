@@ -1,0 +1,688 @@
+{
+    "createdAt": "4/9/2026 9:40:31 PM",
+    "buildTargetGroup": "Android",
+    "projectName": "Unity-QuestVisionKit",
+    "unityVersion": "6000.3.11f1",
+    "projectUrl": "C:/_G/QuestCameraKit/Unity-QuestVisionKit",
+    "tasksStatus": [
+        {
+            "uid": "9afd5b65f9813e8343f5179b24c494bd",
+            "group": "Compatibility",
+            "message": "Disable hand pinch detection through OVRInput, which will be deprecated in a future release. If your project utilizes this behavior, please update your project to use the recommended API for detecting hand pinches going forward: OVRHand.GetFingerIsPinching.",
+            "level": "Recommended",
+            "isDone": false
+        },
+        {
+            "uid": "6d92665a1c0f22127b81de83852d903a",
+            "group": "Quality",
+            "message": "Set maximum pixel lights count to 1",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "f05d62dc5a6f5e156d44fe5380e07be7",
+            "group": "Quality",
+            "message": "Set Texture Quality to Full Res",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "baeb9b90a6acab33ab6ed1cf4c96ef73",
+            "group": "Quality",
+            "message": "Enable Anisotropic Filtering on a per-texture basis",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "8db8cf1c07b527f551efa1fb446c51ba",
+            "group": "Features",
+            "message": "When using Virtual Keyboard in your project it's required to enable Render Model Support",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "2c1087c97db89ff7a44ab885abde9fb7",
+            "group": "Features",
+            "message": "When using Virtual Keyboard in your project it's required to enable its capability",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "2b21b26bac8e99c6e21b9daa3effdd89",
+            "group": "Miscellaneous",
+            "message": "Using Stage tracking origin is not recommended for full immersive VR apps, or if you want to have a consistent tracking space for mixed reality experiences under all the cases of no boundaries (i.e. boundaryless), roomscale boundaries, and stationary boundaries.\n\nYou can click the 'Apply' button to set the tracking origin to Floor Level, and use a Spatial Anchor to achieve that. Click the Documentation link to find more details.",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "6f45004d2c8bd13edafd5fe7e5512da7",
+            "group": "Compatibility",
+            "message": "The Oculus Integration SDK and Meta XR Simulator package versions must match",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "e958b7e7205af9907dee9c9d8e57b89a",
+            "group": "Packages",
+            "message": "OpenXR must be added to the XR Plugin active loaders",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "f8d41a75c37f265934380255e5eece30",
+            "group": "Rendering",
+            "message": "Subsampled Layout should be enabled to improve GPU performance when foveation is enabled.",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "36d4c38c1a9e8a369725c8d57a25daf8",
+            "group": "Packages",
+            "message": "When using OpenXR Plugin, at least the Oculus Touch Interaction Profile should be included for full OVRInput support.",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "6abdb39b0bf66ba7c04b0c267c7e2df8",
+            "group": "Rendering",
+            "message": "Displaying UI without using OVROverlayCanvas will result in less clear UI and less readable text.",
+            "level": "Optional",
+            "isDone": true
+        },
+        {
+            "uid": "4aeb0c4701b1dd860da35734cac3063a",
+            "group": "Rendering",
+            "message": "Displaying text without using OVROverlayCanvas will result in less readable text.",
+            "level": "Optional",
+            "isDone": true
+        },
+        {
+            "uid": "1875a2152927da6e4d9e7530227b322a",
+            "group": "Compatibility",
+            "message": "An Android Manifest file is required",
+            "level": "Optional",
+            "isDone": true
+        },
+        {
+            "uid": "3cdcf16f217a82ddeb6909549e5dd07d",
+            "group": "Compatibility",
+            "message": "Minimum Android API Level must be at least 32",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "273239371d15de7de486e6996e3c0bdd",
+            "group": "Compatibility",
+            "message": "Target API should be set to 32 as to ensure the latest supported version",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "1151c6dd7be796ad1ecc3d619de8bba0",
+            "group": "Compatibility",
+            "message": "Install Location should be set to \"Automatic\"",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "8ab0a0e70bfdaeec84a396e593a1921f",
+            "group": "Compatibility",
+            "message": "Building the ARM64 architecture requires using IL2CPP as the scripting backend",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "dca9a850817941f53765e80db27c95f2",
+            "group": "Compatibility",
+            "message": "Use ARM64 as target architecture",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "8047a1966c313242ebd4d42529c7588c",
+            "group": "Compatibility",
+            "message": "Apps with Android TV Compatibility enabled are not accepted by the Oculus Store",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "58178a0d085edba415ccb8ed6537f995",
+            "group": "Quality",
+            "message": "Optimize Texture Compression: For GPU performance, please use ASTC. In some cases, ETC2 is also a viable solution.",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "5ed0f73406461036e7cf82c13c23489d",
+            "group": "Features",
+            "message": "When using Body Tracking in your project it's required to enable its capability in the project config",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "7f44cdcf7d160f65f7ac4ff5231ecd24",
+            "group": "Features",
+            "message": "Automatically request the Body Tracking permission on startup",
+            "level": "Optional",
+            "isDone": true
+        },
+        {
+            "uid": "9a6b195643f9dfbe746f2b221a4fbd8e",
+            "group": "Features",
+            "message": "When using Face Tracking in your project it's required to enable its capability in the project config",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "3b233a9ea78e48bd9612ffbb095bbf54",
+            "group": "Features",
+            "message": "Automatically request the Face Tracking permission on startup",
+            "level": "Optional",
+            "isDone": true
+        },
+        {
+            "uid": "638f7adf8f20868f13516d471900164f",
+            "group": "Features",
+            "message": "When using Eye Tracking in your project it's required to enable its capability in the project config",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "8d84517a98b29e4a349e71355072f0d5",
+            "group": "Features",
+            "message": "Automatically request the Eye Tracking permission on startup",
+            "level": "Optional",
+            "isDone": true
+        },
+        {
+            "uid": "db3015e9c6512f876f805e2f980c23f5",
+            "group": "Compatibility",
+            "message": "Build Target (Android) is supported",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "e5254b8473ce75ef18b1509177e41b75",
+            "group": "Compatibility",
+            "message": "We recommend using a stable version for Meta XR Development",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "226a9612d32145259b2743a716f9fba3",
+            "group": "Packages",
+            "message": "Either the Oculus XR (com.unity.xr.oculus) or OpenXR Plugin (com.unity.xr.openxr) package must be installed through the Unity Package Manager. It is recommended to use the OpenXR Plugin (com.unity.xr.openxr) package.",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "c5ad2ac8b06a338d8874d28a074a9d83",
+            "group": "Packages",
+            "message": "Beginning with v74, it is recommended to use the OpenXR plugin (com.unity.xr.openxr) instead of the OculusXR plugin (com.unity.xr.oculus).",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "036219cd00a72d42e6e9e6851dd66259",
+            "group": "Packages",
+            "message": "The XR Plug-in Management (com.unity.xr.management) package must be installed through the Unity Package Manager.",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "9df3757562be36939cd036d680aa3e56",
+            "group": "Packages",
+            "message": "It's not recommended to install Oculus XR Plugin and OpenXR Plugin at the same time, which may introduce unintentional conflicts.\nClick 'Edit' to open the Package Manager to uninstall one of the plugins. OpenXR Plugin is the recommended plugin to use.",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "31736735fee7ab217bea57cc359d9f23",
+            "group": "Features",
+            "message": "Complete a Data Use Checkup to meet DUC policy requirements. Please ignore if you are not using any Platform SDK APIs.",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "edfb6eef6866b340551639f2f2c3213d",
+            "group": "Features",
+            "message": "Set up the application ID and the package name. Please ignore if you are not using any Platform SDK APIs.",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "abe5fe8ba12c549f078f42f84324f5c8",
+            "group": "Features",
+            "message": "When using Scene in your project it's required to enable its capability in the project config",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "d1afe95ff5c75c7c964973d13e3ed097",
+            "group": "Features",
+            "message": "When using Scene in your project, it's required to perform a runtime permission request. Hit Apply to have OVRManager request the permission automatically on app startup. It is recommended to hit Ignore and manage the runtime permission yourself.",
+            "level": "Optional",
+            "isDone": true
+        },
+        {
+            "uid": "6e06c276e8c696ad931d29bb2d748365",
+            "group": "Features",
+            "message": "Stationary tracking origin can only be used when experimental features are enabled.",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "7cfd41b6ee61985e53030da2b7cb9a13",
+            "group": "Physics",
+            "message": "Use Default Contact Offset above or equal to 0.01",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "f0bc65f29c92be0418f9d7dde42ac589",
+            "group": "Physics",
+            "message": "Use Sleep Threshold above or equal to 0.005",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "08193c96bfffe61da6a5ef7320284c33",
+            "group": "Physics",
+            "message": "Use Default Solver Iteration below or equal to 8",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "d8c03f917fdcfe949357f33538c59722",
+            "group": "Features",
+            "message": "When using Passthrough in your project it's required to enable its capability in the project config",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "d7724529760d5150981afb13174d01bd",
+            "group": "Features",
+            "message": "When using Passthrough in your project it's required to enable it in OVRManager",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "4625e9da144d3c5d66b50d80a50573de",
+            "group": "Features",
+            "message": "When enabling the Passthrough capability in your project it's required to use ARM64 as the target architecture",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "c88c58fdcfbe4355a2432bb0b62767dc",
+            "group": "Features",
+            "message": "For MR apps it's recommended to disable Virtual Reality Splash Screen (in Player Settings). Otherwise it will result in an inconsistent experience",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "d091363c2f43fb028e3651f27ae2ba48",
+            "group": "Features",
+            "message": "For MR apps it's recommended to disable Show Splash Screen (in Player Settings). Otherwise it will result in an inconsistent experience",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "f187f6a71364064d5dd6ff4bb53df965",
+            "group": "Features",
+            "message": "Black System Splash Screen background is prohibited for MR apps",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "4f0465604e784d17e6105086974cfba8",
+            "group": "Compatibility",
+            "message": "There can only be one active main camera in this scene",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "750bc41784731f0d44839d9bdf0a6cc2",
+            "group": "Compatibility",
+            "message": "There can only be one active audio listener in this scene",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "b0d6333d346d4a4e795ad7c67250e2b3",
+            "group": "Features",
+            "message": "When using Shared Spatial Anchor in your project it's required to enable its capability in the project config",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "cb34e72a9e91926ceac3d90a3f748c70",
+            "group": "Features",
+            "message": "Room Mesh is only available to Quest 3 devices",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "e58851561f7ad326fa1fd25dc1f37de1",
+            "group": "Features",
+            "message": "When using Room Mesh in your project it's required to enable its capability in the project config",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "9e19460ac3307b6ab90c2c6a7648b221",
+            "group": "Compatibility",
+            "message": "Hand Tracking must be enabled in OVRManager when using its Building Block",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "4e6152248f2389c24689e6b91427530c",
+            "group": "Compatibility",
+            "message": "Hand Tracking V2 is required when using the Hand Tracking Building Block",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "8646e45bf55f8615565742731a5880bd",
+            "group": "Features",
+            "message": "When using Spatial Anchor in your project it's required to enable its capability in the project config",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "6e607fba88a13d9001e7fb09ad1ead20",
+            "group": "Features",
+            "message": "When using Passthrough Building Block as an underlay it's required set the camera background to transparent",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "02ea7d67ac3690556fd74295df61450b",
+            "group": "Compatibility",
+            "message": "All Building Blocks dependencies must be present in the scene",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "313c119627cf0777d0df4a8ff7b92f0a",
+            "group": "Compatibility",
+            "message": "All Building Blocks package dependencies must be present in the scene with valid versions. Missing packages:",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "fbfc8996e8eeff491f2280e14bf87966",
+            "group": "Features",
+            "message": "The UnityInferenceEngineProvider is missing its runtime model and/or other required files",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "662705344b7004d6776add50aa9644d4",
+            "group": "Features",
+            "message": "The UnityInferenceEngineProvider in Object Detection mode requires an NMS Compute Shader",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "83907a50303951fb15ead7d63da117b4",
+            "group": "Features",
+            "message": "The AI Agent component is missing its provider profile",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "e5688a21106d43a76e502a9d9a6f08eb",
+            "group": "Features",
+            "message": "The Provider is missing required fields",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "64c2377f93ea53716ead94cdfd6fe269",
+            "group": "Rendering",
+            "message": "DepthAPI requires Vulkan to be set as the Default Graphics API.",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "a8a0cf7f6b5e2a0ff7e5e682cf953312",
+            "group": "Rendering",
+            "message": "DepthAPI requires Occlusions and Session to be enabled in the OpenXR menu.",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "6364ce131d170c44e3c97bd0c55b5364",
+            "group": "Rendering",
+            "message": "DepthAPI requires render mode to be set to Single Instanced (Multiview).",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "6a9cf549ebb38ee84b3daa7bc5c2069a",
+            "group": "Features",
+            "message": "Occlusion is only available on Quest 3 and 3S devices",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "aacc29e33f670d9beb276d23595b9a49",
+            "group": "Features",
+            "message": "DepthAPI requires Scene feature to be set to required",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "239a55ad89fb2bfb1b0c1422403da829",
+            "group": "Compatibility",
+            "message": "DepthAPI requires the Passthrough feature to be enabled",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "2336eb2f3e956db84cfd32d321c865c2",
+            "group": "Features",
+            "message": "Passthrough Camera Access requires:\n1. 'horizonos.permission.HEADSET_CAMERA' permission in AndroidManifest.xml.\n2. 'Passthrough Support' set to 'Supported' or 'Required'.",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "0e570f9e1bfa4da3ef2f4c611343bd87",
+            "group": "Features",
+            "message": "When using Passthrough Camera Access in your project, it's required to perform a runtime permission request. Hit Apply to have OVRManager request the permission automatically on app startup. It is recommended to hit Ignore and manage the runtime permission yourself.",
+            "level": "Optional",
+            "isDone": true
+        },
+        {
+            "uid": "dd7fa12a396d34545785f39519ab46f9",
+            "group": "Features",
+            "message": "MR Utility Kit recommends Scene Support to be set to \"Required\"",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "03917b46b1927c1b5b12e7c05f481be1",
+            "group": "Features",
+            "message": "ImmersiveSceneDebugger prefab reference is missing in MRUK component. Scene debug will be unavailable in Immersive Debugger.",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "537f8ca5bd14cb4bd37b37bdfea25874",
+            "group": "Features",
+            "message": "When using Local Matchmaking in your project it's required to enable the Colocation Session capability in the project config",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "6a357aa7c1afd07b1653ec2f2294f3b7",
+            "group": "Features",
+            "message": "When using Space Sharing in your project it's required to enable the Anchor And Space Sharing Support in the project config",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "699c5c0494bf8ee8823f784f64d6a061",
+            "group": "Features",
+            "message": "When using Space Sharing in your project it's required to disable LoadSceneOnStartup for MRUK",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "d6236d97d59d44efc8352508fa224af8",
+            "group": "Features",
+            "message": "When using OVRSkeleton components it's required to have OVRBody data provider next to it",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "42aedaf04fab5d73963555d7b3649f3a",
+            "group": "Features",
+            "message": "Body API is not compatible with simultaneous hands and controllers",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "0d6fa1b932c9939a0c1d2aa4732fc5ff",
+            "group": "Features",
+            "message": "When using OVRCustomFace components it's required to have OVRFaceExpressions data provider next to it",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "7d5c4c5c639eb49127c9f3d4bacf10a7",
+            "group": "Rendering",
+            "message": "Color Space is required to be Linear",
+            "level": "Required",
+            "isDone": true
+        },
+        {
+            "uid": "a47596ba0bb99fdc187f42b7be7b1542",
+            "group": "Rendering",
+            "message": "Enable Legacy Graphics Jobs. This can help performance if your application is main thread bound.",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "9a36498ed7a7362c24dc423e041dc567",
+            "group": "Rendering",
+            "message": "Manual selection of Graphic API, favoring Vulkan (or OpenGLES3)",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "ffe5f0017351a2664ae153646337a939",
+            "group": "Rendering",
+            "message": "Enable Multithreaded Rendering",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "50c930ccebc6b4aea6ee27e1d1ef39f1",
+            "group": "Rendering",
+            "message": "Use 32Bit Display Buffer",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "489debe5b332e57b7a34a6ad4e415255",
+            "group": "Rendering",
+            "message": "Use Forward Rendering Path",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "0c9572929db2e8975ae93ec7dc3239d9",
+            "group": "Rendering",
+            "message": "Use Stereo Rendering Instancing",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "e8e95f5b0b55b21a1a42f288eba158eb",
+            "group": "Rendering",
+            "message": "Setting the Intermediate Texture Mode to \"Always\" might have a performance impact, it is recommended to use \"Auto\"",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "578af2eb3c12bf2058d41bfe1b3f5673",
+            "group": "Rendering",
+            "message": "SSAO will have some performace impact, it is recommended to disable SSAO",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "1da2360cd351a28ff9f0e8585049cb2e",
+            "group": "Rendering",
+            "message": "Use Non-Directional lightmaps",
+            "level": "Optional",
+            "isDone": true
+        },
+        {
+            "uid": "b0869d8045371f7d8ea3441090567c41",
+            "group": "Rendering",
+            "message": "Disable Realtime Global Illumination",
+            "level": "Optional",
+            "isDone": true
+        },
+        {
+            "uid": "2cf2e96467c8e750aa93ebece9538d83",
+            "group": "Rendering",
+            "message": "Consider using GPU Skinning if your application is CPU bound",
+            "level": "Optional",
+            "isDone": true
+        },
+        {
+            "uid": "68e7a5b6cd13caa95353d8a52e3c9dba",
+            "group": "Rendering",
+            "message": "Please note that OpenXR Plugin (com.unity.xr.openxr) support for Dynamic Resolution is only available from Unity 2022.3.49f1 onwards. Click 'Apply' to disable Dynamic Resolution in this scene.",
+            "level": "Optional",
+            "isDone": true
+        },
+        {
+            "uid": "ead0c28d0becbc79d4d7f20e263bea8b",
+            "group": "Rendering",
+            "message": "Enabling Depth Texture may significantly impact performance. It is recommended to disable it when it isn't required in a shader.",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "30fb912ef77310e7ad071bd4be73c7cb",
+            "group": "Rendering",
+            "message": "Enabling Opaque Texture may significantly impact performance. It is recommended to disable it when it isn't required in a shader.",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "d06541f854291e7c2401cf2b86492039",
+            "group": "Rendering",
+            "message": "Using HDR may significantly impact performance. It is recommended to disable HDR.",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "ff801ae4aaaaef7574556bc1c90fb37d",
+            "group": "Rendering",
+            "message": "Using FSR may significantly impact performance. It is recommended to switch Upscaling Filter to Auto.",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "c3c0672618b712c33f4dc51fb1fa34b5",
+            "group": "Rendering",
+            "message": "Using the camera stack may significantly impact performance. It is not recommended to use the camera stack feature.",
+            "level": "Recommended",
+            "isDone": true
+        },
+        {
+            "uid": "23622a94b395175c7583687cd1da19d8",
+            "group": "Rendering",
+            "message": "Use recommended MSAA level for Android",
+            "level": "Recommended",
+            "isDone": true
+        }
+    ]
+}

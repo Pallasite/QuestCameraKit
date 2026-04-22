@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Meta.XR;
@@ -23,10 +24,27 @@ public class AprilTagDisplayManager : MonoBehaviour
         EnvironmentRaycast
     }
 
+    /// <summary>
+    /// Holds a detected tag's world-space pose after camera transform.
+    /// </summary>
+    public struct TagWorldPose
+    {
+        public int TagId;
+        public Vector3 Position;
+        public Quaternion Rotation;
+    }
+
     [SerializeField] private PlacementMode placementMode = PlacementMode.Direct;
 
     [Tooltip("Visual scale multiplier for marker display (does not affect pose accuracy).")]
     [SerializeField] private float markerDisplayScale = 1f;
+
+    /// <summary>
+    /// Fired each frame that tags are detected, after world poses are computed.
+    /// Subscribe from additional visualizers (e.g. AprilTagWireframeVisualizer)
+    /// to receive results without running a second scan.
+    /// </summary>
+    public event Action<TagWorldPose[]> OnTagsDetected;
 
     private AprilTagScanner _scanner;
     private EnvironmentRaycastManager _envRaycastManager;
@@ -69,6 +87,9 @@ public class AprilTagDisplayManager : MonoBehaviour
             return;
         }
 
+        // Build world poses and collect them for the event
+        var worldPoses = new List<TagWorldPose>(results.Length);
+
         foreach (var result in results)
         {
             if (!TryBuildWorldPose(result, out var worldPos, out var worldRot))
@@ -76,11 +97,24 @@ public class AprilTagDisplayManager : MonoBehaviour
                 continue;
             }
 
+            worldPoses.Add(new TagWorldPose
+            {
+                TagId = result.tagId,
+                Position = worldPos,
+                Rotation = worldRot
+            });
+
             var marker = GetOrCreateMarker(result.tagId);
             if (!marker) continue;
 
             var scale = new Vector3(markerDisplayScale, markerDisplayScale, 1f);
             marker.UpdateMarker(worldPos, worldRot, scale, $"Tag {result.tagId}");
+        }
+
+        // Notify any additional visualizers
+        if (worldPoses.Count > 0)
+        {
+            OnTagsDetected?.Invoke(worldPoses.ToArray());
         }
 
         CleanupInactiveMarkers();
