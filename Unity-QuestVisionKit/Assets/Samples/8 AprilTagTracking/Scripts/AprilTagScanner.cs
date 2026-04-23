@@ -19,6 +19,15 @@ public class AprilTagResult
     public Pose cameraPose;          // Camera world-space pose at time of capture
     public PassthroughCameraAccess.CameraIntrinsics intrinsics;
     public Vector2Int captureResolution;
+
+    // Set by stereo scanners that triangulate the world pose directly. When
+    // non-null, AprilTagDisplayManager uses this and skips the cameraPose * local* math.
+    public Pose? worldPoseOverride;
+
+    // Per-corner world-space positions (4 elements, same order as keijiro's
+    // Detection corners). Populated by stereo scanners; consumers like
+    // multi-tag plane fitters or calibration averagers operate on these.
+    public Vector3[] observedCorners;
 }
 
 /// <summary>
@@ -30,7 +39,7 @@ public class AprilTagResult
 /// AsyncGPUReadback for non-blocking pixel extraction, and per-frame
 /// camera pose/intrinsics capture.
 /// </summary>
-public class AprilTagScanner : MonoBehaviour
+public class AprilTagScanner : MonoBehaviour, IAprilTagScanner
 {
     [Tooltip("Downsampling factor for the camera image. Higher = faster but lower accuracy.")]
     [SerializeField] private int sampleFactor = 2;

@@ -46,14 +46,18 @@ public class AprilTagDisplayManager : MonoBehaviour
     /// </summary>
     public event Action<TagWorldPose[]> OnTagsDetected;
 
-    private AprilTagScanner _scanner;
+    private IAprilTagScanner _scanner;
     private EnvironmentRaycastManager _envRaycastManager;
     private readonly Dictionary<int, MarkerController> _activeMarkers = new();
     private bool _scanInProgress;
 
     private void Awake()
     {
-        _scanner = GetComponent<AprilTagScanner>();
+        // Prefer a stereo scanner if present (it triangulates and avoids the
+        // single-camera depth bias that misaligns one eye); fall back to mono.
+        // Use Unity's overloaded != null (not ??) so destroyed components are treated as null.
+        var stereo = GetComponent<StereoAprilTagScanner>();
+        _scanner = stereo != null ? (IAprilTagScanner)stereo : GetComponent<AprilTagScanner>();
         _envRaycastManager = GetComponent<EnvironmentRaycastManager>();
     }
 
@@ -64,7 +68,7 @@ public class AprilTagDisplayManager : MonoBehaviour
 
     private async void RefreshMarkers()
     {
-        if (!_scanner) return;
+        if (_scanner == null) return;
         _scanInProgress = true;
 
         AprilTagResult[] results;
@@ -131,9 +135,17 @@ public class AprilTagDisplayManager : MonoBehaviour
 
         var camPose = result.cameraPose;
 
-        // Transform local position to world space
-        worldPos = camPose.position + camPose.rotation * result.localPosition;
-        worldRot = camPose.rotation * result.localRotation;
+        if (result.worldPoseOverride.HasValue)
+        {
+            var wp = result.worldPoseOverride.Value;
+            worldPos = wp.position;
+            worldRot = wp.rotation;
+        }
+        else
+        {
+            worldPos = camPose.position + camPose.rotation * result.localPosition;
+            worldRot = camPose.rotation * result.localRotation;
+        }
 
         if (placementMode == PlacementMode.EnvironmentRaycast && _envRaycastManager)
         {
