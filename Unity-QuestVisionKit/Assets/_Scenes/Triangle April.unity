@@ -2435,8 +2435,8 @@ MonoBehaviour:
   displayManager: {fileID: 665711653}
   anchoredContentPrefab: {fileID: 7985637374133528724, guid: 252fac5cf6017c3479438eb76d0a64a6, type: 3}
   cameraAnchor: {fileID: 138638053}
-  allowedTagIds: 05000000
-  maxAnchorCommitDistanceMeters: 1
+  allowedTagIds: 
+  maxAnchorCommitDistanceMeters: 2
   windowSize: 10
   maxPositionSpreadMeters: 0.005
   maxRotationSpreadDegrees: 2
