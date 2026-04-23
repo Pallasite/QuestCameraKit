@@ -71,15 +71,23 @@ public class AprilTagAnchorManager : MonoBehaviour
 
     private readonly Dictionary<int, AprilTagPoseStabilityGate> _gates = new();
     private readonly Dictionary<int, OVRSpatialAnchor> _anchors = new();
+    private readonly Dictionary<int, AnchoredContentController> _controllers = new();
     private readonly Dictionary<int, float> _lastDistance = new();
     private readonly Dictionary<int, float> _lastObservationTime = new();
 
     public IReadOnlyDictionary<int, OVRSpatialAnchor> ActiveAnchors => _anchors;
+    public IReadOnlyDictionary<int, AnchoredContentController> ActiveControllers => _controllers;
 
     public event Action<int, OVRSpatialAnchor> OnAnchorCommitted;
     public event Action<int> OnAnchorRemoved;
 
     public bool HasAnchor(int tagId) => _anchors.ContainsKey(tagId);
+
+    public bool TryGetAnchor(int tagId, out OVRSpatialAnchor anchor)
+        => _anchors.TryGetValue(tagId, out anchor);
+
+    public bool TryGetController(int tagId, out AnchoredContentController controller)
+        => _controllers.TryGetValue(tagId, out controller);
 
     public bool TryGetGateState(int tagId,
                                 out int samples,
@@ -140,6 +148,7 @@ public class AprilTagAnchorManager : MonoBehaviour
     {
         if (!_anchors.TryGetValue(tagId, out var anchor)) return;
         _anchors.Remove(tagId);
+        _controllers.Remove(tagId);
 
         if (anchor != null)
         {
@@ -270,6 +279,7 @@ public class AprilTagAnchorManager : MonoBehaviour
         if (go.TryGetComponent<AnchoredContentController>(out var controller))
         {
             controller.SetTagId(tagId);
+            _controllers[tagId] = controller;
         }
 
         Debug.Log($"[AprilTagAnchorManager] Committed anchor for tag {tagId} at {pose.position}");

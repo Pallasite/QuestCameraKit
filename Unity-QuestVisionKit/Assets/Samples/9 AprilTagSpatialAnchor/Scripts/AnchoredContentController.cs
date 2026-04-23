@@ -24,10 +24,39 @@ public class AnchoredContentController : MonoBehaviour
     private OVRSpatialAnchor _anchor;
     private float _nextDiag;
 
+    /// <summary>
+    /// The AprilTag ID this anchor was committed for. -1 until SetTagId has run.
+    /// </summary>
+    public int TagId => _tagId;
+
+    /// <summary>
+    /// The OVRSpatialAnchor locking this content to the world.
+    /// Use <c>Anchor.Uuid</c> to key persistence or correlate across sessions.
+    /// </summary>
+    public OVRSpatialAnchor Anchor
+    {
+        get
+        {
+            if (!_anchor) _anchor = GetComponent<OVRSpatialAnchor>();
+            return _anchor;
+        }
+    }
+
     public void SetTagId(int tagId)
     {
         _tagId = tagId;
-        if (label) label.text = $"Tag {tagId}";
+        if (label)
+        {
+            label.text = $"Tag {tagId}";
+            if (verboseDiagnostics)
+            {
+                Debug.Log($"[AnchoredContent] SetTagId({tagId}) -> label.text='{label.text}' (label={label.GetType().Name} on '{label.gameObject.name}')");
+            }
+        }
+        else if (verboseDiagnostics)
+        {
+            Debug.LogWarning($"[AnchoredContent] SetTagId({tagId}) but label field is null — wire a TMP_Text into the Label slot on the prefab's AnchoredContentController.");
+        }
     }
 
     private void Awake()
