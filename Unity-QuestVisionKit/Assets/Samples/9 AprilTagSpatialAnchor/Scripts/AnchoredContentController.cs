@@ -45,7 +45,18 @@ public class AnchoredContentController : MonoBehaviour
     public void SetTagId(int tagId)
     {
         _tagId = tagId;
-        if (label) label.text = $"Tag {tagId}";
+        if (label)
+        {
+            label.text = $"Tag {tagId}";
+            if (verboseDiagnostics)
+            {
+                Debug.Log($"[AnchoredContent] SetTagId({tagId}) -> label.text='{label.text}' (label={label.GetType().Name} on '{label.gameObject.name}')");
+            }
+        }
+        else if (verboseDiagnostics)
+        {
+            Debug.LogWarning($"[AnchoredContent] SetTagId({tagId}) but label field is null — wire a TMP_Text into the Label slot on the prefab's AnchoredContentController.");
+        }
     }
 
     private void Awake()
