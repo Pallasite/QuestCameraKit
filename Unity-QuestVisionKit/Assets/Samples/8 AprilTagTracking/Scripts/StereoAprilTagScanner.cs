@@ -61,6 +61,17 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     [Tooltip("How many frame pairs to capture for a calibration scan. Variance drops with sqrt(N).")]
     [SerializeField] private int calibrationFrameCount = 16;
 
+    [Header("Diagnostics")]
+    [Tooltip("Pose-from-corners solver. Kabsch is the optimal rigid fit and is more stable; " +
+             "NaiveCross is the original cross-product method, kept toggleable for A/B comparison on device.")]
+    [SerializeField] private RotationSolver rotationSolver = RotationSolver.Kabsch;
+
+    public enum RotationSolver
+    {
+        NaiveCross,
+        Kabsch,
+    }
+
     private ComputeShader _downsampleShader;
     private RenderTexture _leftDownsampled;
     private RenderTexture _rightDownsampled;
@@ -393,8 +404,21 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     //   1 = (+0.5, -0.5, 0)   bottom-right
     //   2 = (+0.5, +0.5, 0)   top-right
     //   3 = (-0.5, +0.5, 0)   top-left
-    // Recover world axes by averaging the two parallel edges on each side.
-    private static (Vector3 pos, Quaternion rot) PoseFromCorners(Vector3[] c)
+    private (Vector3 pos, Quaternion rot) PoseFromCorners(Vector3[] c)
+    {
+        return rotationSolver switch
+        {
+            RotationSolver.Kabsch => PoseFromCornersKabsch(c),
+            _ => PoseFromCornersNaive(c),
+        };
+    }
+
+    // Original method: averaged parallel edges + Quaternion.LookRotation. Kept as a
+    // diagnostic toggle so on-device A/B comparison is one inspector click.
+    // LookRotation only enforces the forward axis exactly and projects up onto its
+    // perpendicular, so the in-plane rotation is sensitive to which corners' noise
+    // happens to dominate — that's the source of the rotation jitter.
+    private static (Vector3 pos, Quaternion rot) PoseFromCornersNaive(Vector3[] c)
     {
         var center = (c[0] + c[1] + c[2] + c[3]) * 0.25f;
         var right = ((c[1] - c[0]) + (c[2] - c[3])) * 0.5f;
@@ -406,6 +430,79 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
         }
         return (center, Quaternion.LookRotation(forward.normalized, up.normalized));
     }
+
+    // Optimal rigid fit (Kabsch / Procrustes) specialized for a planar 4-corner
+    // target. Standard 3D Kabsch via SVD is rank-deficient when the source points
+    // are coplanar (our case), so we use a geometric specialization:
+    //   1. Centroid → position.
+    //   2. Plane normal from cross of diagonals (and a sign check against the
+    //      tag-local +Z direction implied by corner ordering).
+    //   3. Project corners into the plane, then a 2D Procrustes solve gives the
+    //      in-plane rotation θ in closed form.
+    //   4. Rebuild the world basis vectors from θ and the plane normal, then a
+    //      LookRotation that's now mathematically exact (up is constructed
+    //      perpendicular to forward, so no projection is applied).
+    // Uses all 8 in-plane and 4 out-of-plane measurements jointly, which is what
+    // the naive cross method doesn't do.
+    private static (Vector3 pos, Quaternion rot) PoseFromCornersKabsch(Vector3[] c)
+    {
+        var centroid = (c[0] + c[1] + c[2] + c[3]) * 0.25f;
+
+        // Plane normal — cross of diagonals is well-conditioned for a near-square
+        // pattern even with corner noise.
+        var diag1 = c[2] - c[0];
+        var diag2 = c[3] - c[1];
+        var normal = Vector3.Cross(diag1, diag2);
+        if (normal.sqrMagnitude < 1e-10f) return (centroid, Quaternion.identity);
+        normal.Normalize();
+
+        // Sign check: tag-local +Z should map to +normal. Tag-local +Z is
+        // cross(local +X, local +Y) = cross(c1-c0, c3-c0) (the bottom and left
+        // edges). Flip if the implied normal points the other way.
+        var impliedZ = Vector3.Cross(c[1] - c[0], c[3] - c[0]);
+        if (Vector3.Dot(impliedZ, normal) < 0f) normal = -normal;
+
+        // In-plane reference basis (u, v). Pick u along bottom edge projected
+        // onto plane; v completes a right-handed frame with normal.
+        var bottomEdge = c[1] - c[0];
+        var u = bottomEdge - Vector3.Dot(bottomEdge, normal) * normal;
+        if (u.sqrMagnitude < 1e-10f) return (centroid, Quaternion.identity);
+        u.Normalize();
+        var v = Vector3.Cross(normal, u);
+
+        // Project each world corner into the (u, v) frame relative to centroid.
+        // Tag-local corner positions in 2D (XY plane, centered):
+        //   l0 = (-0.5, -0.5), l1 = (+0.5, -0.5), l2 = (+0.5, +0.5), l3 = (-0.5, +0.5)
+        // Closed-form 2D Procrustes for the rotation θ that aligns local → projected:
+        //   θ* = atan2( Σ (l.x·p.y − l.y·p.x), Σ (l.x·p.x + l.y·p.y) )
+        float num = 0f, den = 0f;
+        var localXY = LocalCornerXY;
+        for (int i = 0; i < 4; i++)
+        {
+            var rel = c[i] - centroid;
+            float pu = Vector3.Dot(rel, u);
+            float pv = Vector3.Dot(rel, v);
+            num += localXY[i].x * pv - localXY[i].y * pu;
+            den += localXY[i].x * pu + localXY[i].y * pv;
+        }
+        float theta = Mathf.Atan2(num, den);
+        float cos = Mathf.Cos(theta), sin = Mathf.Sin(theta);
+
+        // World direction of tag-local +Y (used as upwards to LookRotation).
+        // Tag-local +X maps to (cos·u + sin·v) — not needed here since LookRotation
+        // derives it from forward × upwards.
+        var worldUp = -sin * u + cos * v;
+
+        return (centroid, Quaternion.LookRotation(normal, worldUp));
+    }
+
+    private static readonly Vector2[] LocalCornerXY =
+    {
+        new Vector2(-0.5f, -0.5f),
+        new Vector2(+0.5f, -0.5f),
+        new Vector2(+0.5f, +0.5f),
+        new Vector2(-0.5f, +0.5f),
+    };
 
     private static ScaledIntrinsics ScaleIntrinsics(
         PassthroughCameraAccess.CameraIntrinsics intr, Vector2Int currentRes, int targetW, int targetH)
