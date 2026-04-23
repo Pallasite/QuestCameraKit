@@ -69,11 +69,20 @@ public class AprilTagAnchorManager : MonoBehaviour
     [Tooltip("Once committed, ignore further detections of the same tag ID.")]
     [SerializeField] private bool oneShotPerTag = true;
 
+    [Header("Diagnostics")]
+    [Tooltip("Log a per-tag gate summary at this interval (seconds). 0 disables. Useful when running without the debug UI.")]
+    [SerializeField] private float gateLogIntervalSeconds = 0f;
+
+    [Tooltip("Warn when an anchor in the active dictionary turns into a null Unity reference (component destroyed by a failed native anchor creation).")]
+    [SerializeField] private bool warnOnAnchorDestruction = true;
+
     private readonly Dictionary<int, AprilTagPoseStabilityGate> _gates = new();
     private readonly Dictionary<int, OVRSpatialAnchor> _anchors = new();
     private readonly Dictionary<int, AnchoredContentController> _controllers = new();
     private readonly Dictionary<int, float> _lastDistance = new();
     private readonly Dictionary<int, float> _lastObservationTime = new();
+    private readonly HashSet<int> _anchorDestructionWarned = new();
+    private float _nextGateLog;
 
     public IReadOnlyDictionary<int, OVRSpatialAnchor> ActiveAnchors => _anchors;
     public IReadOnlyDictionary<int, AnchoredContentController> ActiveControllers => _controllers;
@@ -214,6 +223,45 @@ public class AprilTagAnchorManager : MonoBehaviour
         {
             displayManager.OnTagsDetected -= HandleTagsDetected;
         }
+    }
+
+    private void Update()
+    {
+        if (warnOnAnchorDestruction)
+        {
+            foreach (var id in _anchors.Keys)
+            {
+                if (_anchors[id] == null && _anchorDestructionWarned.Add(id))
+                {
+                    Debug.LogWarning($"[AprilTagAnchorManager] Anchor for tag {id} was destroyed (OVRSpatialAnchor component null). Native creation likely failed. Consider calling ResetTag({id}) to retry.");
+                }
+            }
+        }
+
+        if (gateLogIntervalSeconds > 0f && Time.time >= _nextGateLog)
+        {
+            _nextGateLog = Time.time + gateLogIntervalSeconds;
+            LogGateState();
+        }
+    }
+
+    private void LogGateState()
+    {
+        if (_gates.Count == 0 && _anchors.Count == 0) return;
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"[AprilTagAnchorManager] active={_anchors.Count}");
+        foreach (var id in KnownTagIds)
+        {
+            if (TryGetGateState(id, out var samples, out var target,
+                                 out var pos, out var rot,
+                                 out var dist, out var state))
+            {
+                sb.AppendFormat(" | tag{0}[{1}] {2:0.00}m {3}/{4} pos{5:0.0}mm rot{6:0.0}°",
+                    id, state, dist, samples, target, pos * 1000f, rot);
+            }
+        }
+        Debug.Log(sb.ToString());
     }
 
     private void HandleTagsDetected(AprilTagDisplayManager.TagWorldPose[] poses)

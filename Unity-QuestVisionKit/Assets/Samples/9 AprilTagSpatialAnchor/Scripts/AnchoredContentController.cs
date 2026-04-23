@@ -24,6 +24,23 @@ public class AnchoredContentController : MonoBehaviour
     private OVRSpatialAnchor _anchor;
     private float _nextDiag;
 
+    // Silent-failure tracking
+    private float _spawnTime;
+    private bool _stateInit;
+    private bool _prevCreated;
+    private bool _prevLocalized;
+    private bool _prevTracked;
+    private bool _hadAnchor;
+    private bool _warnedUnlocalized;
+    private bool _warnedAnchorDestroyed;
+    private bool _warnedNotCreated;
+
+    [Tooltip("If the anchor hasn't localized within this many seconds, log a warning.")]
+    [SerializeField] private float localizationTimeoutSeconds = 5f;
+
+    [Tooltip("If the anchor hasn't reported Created=true within this many seconds, log a warning.")]
+    [SerializeField] private float creationTimeoutSeconds = 2f;
+
     /// <summary>
     /// The AprilTag ID this anchor was committed for. -1 until SetTagId has run.
     /// </summary>
@@ -64,13 +81,15 @@ public class AnchoredContentController : MonoBehaviour
     private void Awake()
     {
         _anchor = GetComponentInParent<OVRSpatialAnchor>(true);
+        _hadAnchor = _anchor != null;
+        _spawnTime = Time.time;
     }
 
     private void OnEnable()
     {
         if (verboseDiagnostics)
         {
-            Debug.Log($"[AnchoredContent] OnEnable tag={_tagId} pos={transform.position}");
+            Debug.Log($"[AnchoredContent] OnEnable tag={_tagId} pos={transform.position} anchorPresent={_hadAnchor}");
         }
     }
 
@@ -92,13 +111,66 @@ public class AnchoredContentController : MonoBehaviour
 
     private void Update()
     {
-        if (verboseDiagnostics && Time.time >= _nextDiag)
+        if (!verboseDiagnostics) return;
+
+        if (!_anchor) _anchor = GetComponentInParent<OVRSpatialAnchor>(true);
+        var anchorPresent = _anchor != null;
+        var created = anchorPresent && _anchor.Created;
+        var localized = anchorPresent && _anchor.Localized;
+        var tracked = anchorPresent && _anchor.IsTracked;
+
+        // State-transition logs (one line per edge, not per tick)
+        if (!_stateInit)
+        {
+            _stateInit = true;
+            _prevCreated = created;
+            _prevLocalized = localized;
+            _prevTracked = tracked;
+        }
+        else
+        {
+            if (created != _prevCreated)
+            {
+                Debug.Log($"[AnchoredContent] tag={_tagId} Created: {_prevCreated} -> {created} at t+{Time.time - _spawnTime:F2}s");
+                _prevCreated = created;
+            }
+            if (localized != _prevLocalized)
+            {
+                Debug.Log($"[AnchoredContent] tag={_tagId} Localized: {_prevLocalized} -> {localized} at t+{Time.time - _spawnTime:F2}s");
+                _prevLocalized = localized;
+            }
+            if (tracked != _prevTracked)
+            {
+                Debug.Log($"[AnchoredContent] tag={_tagId} IsTracked: {_prevTracked} -> {tracked} at t+{Time.time - _spawnTime:F2}s");
+                _prevTracked = tracked;
+            }
+        }
+
+        // Silent-failure warnings (one-shot)
+        var elapsed = Time.time - _spawnTime;
+
+        if (!_warnedAnchorDestroyed && _hadAnchor && !anchorPresent)
+        {
+            Debug.LogWarning($"[AnchoredContent] tag={_tagId} OVRSpatialAnchor component vanished after t+{elapsed:F2}s. Likely CreateSpatialAnchor failed and Meta SDK called Destroy(this) on the component.");
+            _warnedAnchorDestroyed = true;
+        }
+
+        if (!_warnedNotCreated && anchorPresent && !created && elapsed > creationTimeoutSeconds)
+        {
+            Debug.LogWarning($"[AnchoredContent] tag={_tagId} OVRSpatialAnchor present but Created=false after {creationTimeoutSeconds:F1}s. Native CreateSpatialAnchor may be stuck or failing.");
+            _warnedNotCreated = true;
+        }
+
+        if (!_warnedUnlocalized && created && !localized && elapsed > localizationTimeoutSeconds)
+        {
+            Debug.LogWarning($"[AnchoredContent] tag={_tagId} anchor Created but NOT Localized after {localizationTimeoutSeconds:F1}s. SLAM map may lack features at this location; transform will stay at its instantiated pose.");
+            _warnedUnlocalized = true;
+        }
+
+        // Periodic full tick (unchanged)
+        if (Time.time >= _nextDiag)
         {
             _nextDiag = Time.time + diagnosticsInterval;
-            if (!_anchor) _anchor = GetComponent<OVRSpatialAnchor>();
-            var created = _anchor ? _anchor.Created : false;
-            var localized = _anchor ? _anchor.Localized : false;
-            var tracked = _anchor ? _anchor.IsTracked : false;
             Debug.Log($"[AnchoredContent] tick tag={_tagId} pos={transform.position} created={created} localized={localized} tracked={tracked} rendererCount={GetComponentsInChildren<Renderer>(true).Length}");
         }
     }
