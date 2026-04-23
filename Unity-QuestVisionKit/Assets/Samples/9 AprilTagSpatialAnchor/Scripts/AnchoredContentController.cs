@@ -24,6 +24,24 @@ public class AnchoredContentController : MonoBehaviour
     private OVRSpatialAnchor _anchor;
     private float _nextDiag;
 
+    /// <summary>
+    /// The AprilTag ID this anchor was committed for. -1 until SetTagId has run.
+    /// </summary>
+    public int TagId => _tagId;
+
+    /// <summary>
+    /// The OVRSpatialAnchor locking this content to the world.
+    /// Use <c>Anchor.Uuid</c> to key persistence or correlate across sessions.
+    /// </summary>
+    public OVRSpatialAnchor Anchor
+    {
+        get
+        {
+            if (!_anchor) _anchor = GetComponent<OVRSpatialAnchor>();
+            return _anchor;
+        }
+    }
+
     public void SetTagId(int tagId)
     {
         _tagId = tagId;
