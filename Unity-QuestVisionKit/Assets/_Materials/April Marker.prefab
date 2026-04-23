@@ -847,9 +847,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AnchoredContentController
   label: {fileID: 6533881910428882061}
-  billboardLabel: 1
+  billboardLabel: 0
   verboseDiagnostics: 1
-  diagnosticsInterval: 0.5
+  diagnosticsInterval: 0.25
 --- !u!222 &3413365711012297680
 CanvasRenderer:
   m_ObjectHideFlags: 0
@@ -878,7 +878,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: QR Code Payload
+  m_text: AnchorID
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
