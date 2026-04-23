@@ -276,13 +276,20 @@ public class AprilTagAnchorManager : MonoBehaviour
         var anchor = go.AddComponent<OVRSpatialAnchor>();
         _anchors[tagId] = anchor;
 
-        if (go.TryGetComponent<AnchoredContentController>(out var controller))
+        // Search the whole prefab hierarchy so the controller still wires up
+        // whether it sits on the root or on a child.
+        var controller = go.GetComponentInChildren<AnchoredContentController>(true);
+        if (controller)
         {
             controller.SetTagId(tagId);
             _controllers[tagId] = controller;
+            Debug.Log($"[AprilTagAnchorManager] Committed anchor for tag {tagId} at {pose.position} (controller on '{controller.gameObject.name}')");
+        }
+        else
+        {
+            Debug.LogWarning($"[AprilTagAnchorManager] Committed anchor for tag {tagId} at {pose.position} but no AnchoredContentController found in prefab hierarchy.");
         }
 
-        Debug.Log($"[AprilTagAnchorManager] Committed anchor for tag {tagId} at {pose.position}");
         OnAnchorCommitted?.Invoke(tagId, anchor);
     }
 }

@@ -32,12 +32,14 @@ public class AnchoredContentController : MonoBehaviour
     /// <summary>
     /// The OVRSpatialAnchor locking this content to the world.
     /// Use <c>Anchor.Uuid</c> to key persistence or correlate across sessions.
+    /// Searches parents too, so the controller can sit on any GameObject in
+    /// the anchored prefab's hierarchy.
     /// </summary>
     public OVRSpatialAnchor Anchor
     {
         get
         {
-            if (!_anchor) _anchor = GetComponent<OVRSpatialAnchor>();
+            if (!_anchor) _anchor = GetComponentInParent<OVRSpatialAnchor>(true);
             return _anchor;
         }
     }
@@ -61,7 +63,7 @@ public class AnchoredContentController : MonoBehaviour
 
     private void Awake()
     {
-        _anchor = GetComponent<OVRSpatialAnchor>();
+        _anchor = GetComponentInParent<OVRSpatialAnchor>(true);
     }
 
     private void OnEnable()
