@@ -2436,12 +2436,14 @@ MonoBehaviour:
   anchoredContentPrefab: {fileID: 7985637374133528724, guid: 252fac5cf6017c3479438eb76d0a64a6, type: 3}
   cameraAnchor: {fileID: 138638053}
   allowedTagIds: 
-  maxAnchorCommitDistanceMeters: 2
+  maxAnchorCommitDistanceMeters: 1
   windowSize: 10
   maxPositionSpreadMeters: 0.005
   maxRotationSpreadDegrees: 2
   maxObservationAgeSeconds: 0.5
   oneShotPerTag: 1
+  gateLogIntervalSeconds: 0
+  warnOnAnchorDestruction: 1
 --- !u!4 &424251734
 Transform:
   m_ObjectHideFlags: 0
@@ -4188,7 +4190,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 665711650}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 3ac159703e3930e438687263b7a44f0e, type: 3}
   m_Name: 
@@ -4280,7 +4282,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: meta.xr.mrutilitykit::Meta.XR.PassthroughCameraAccess
   CameraPosition: 1
-  RequestedResolution: {x: 1280, y: 960}
+  RequestedResolution: {x: 1280, y: 1280}
   _maxFramerate: 60
   TargetMaterial: {fileID: 0}
   _texturePropertyName: 
@@ -4333,7 +4335,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: meta.xr.mrutilitykit::Meta.XR.PassthroughCameraAccess
   CameraPosition: 0
-  RequestedResolution: {x: 1280, y: 960}
+  RequestedResolution: {x: 1280, y: 1280}
   _maxFramerate: 60
   TargetMaterial: {fileID: 0}
   _texturePropertyName: 
