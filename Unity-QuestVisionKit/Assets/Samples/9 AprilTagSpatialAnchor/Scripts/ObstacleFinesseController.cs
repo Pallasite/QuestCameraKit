@@ -22,6 +22,7 @@ using UnityEngine;
 ///   A (right)  → reset position offset to zero
 ///   B (right)  → reset rotation offset to identity
 ///   X + Y both held (left) → reset everything
+///   Right HandTrigger held + A → (re)calibrate constellation
 ///
 /// Stick input is discrete: each push past <c>stickFireThreshold</c> fires one
 /// nudge, and the stick must return below <c>stickRearmThreshold</c> before
@@ -86,6 +87,14 @@ public class ObstacleFinesseController : MonoBehaviour
 
     private void Update()
     {
+        // Calibrate chord first — it must work even before an obstacle exists.
+        var rightGrip = OVRInput.Get(OVRInput.Button.SecondaryHandTrigger);
+        if (rightGrip && OVRInput.GetDown(OVRInput.Button.One))
+        {
+            TriggerCalibrate();
+            return;
+        }
+
         var target = Target;
         if (!target) return;
 
@@ -100,14 +109,34 @@ public class ObstacleFinesseController : MonoBehaviour
         // Rotation: right stick X → yaw around local Y.
         if (TryConsumeStick(2, rStick.x, out var syaw)) RotateLocalY(target, syaw * RotationStep);
 
-        // Resets.
-        if (OVRInput.GetDown(OVRInput.Button.One)) ResetPosition(target);
+        // Resets — gated on right-grip-released so A doesn't both reset and calibrate.
+        if (!rightGrip && OVRInput.GetDown(OVRInput.Button.One)) ResetPosition(target);
         if (OVRInput.GetDown(OVRInput.Button.Two)) ResetRotation(target);
         if (OVRInput.Get(OVRInput.Button.Three) && OVRInput.Get(OVRInput.Button.Four)
             && (OVRInput.GetDown(OVRInput.Button.Three) || OVRInput.GetDown(OVRInput.Button.Four)))
         {
             ResetAll(target);
         }
+    }
+
+    /// <summary>
+    /// Fire-and-forget calibration via the assigned ConstellationDriftCorrector.
+    /// Logs and pulses both controllers so the experimenter gets immediate
+    /// confirmation; the corrector itself takes ~calibrationFrameCount frames
+    /// to capture and may quietly fail (too few tags, scanner busy) — watch
+    /// the corrector's log lines for the outcome.
+    /// </summary>
+    public void TriggerCalibrate()
+    {
+        if (!corrector)
+        {
+            Debug.LogWarning("[FinesseController] Calibrate chord pressed but no ConstellationDriftCorrector assigned.");
+            return;
+        }
+        Debug.Log("[FinesseController] Calibrate chord -> ConstellationDriftCorrector.Calibrate()");
+        Pulse(OVRInput.Controller.LTouch);
+        Pulse(OVRInput.Controller.RTouch);
+        _ = corrector.Calibrate();
     }
 
     /// <summary>
