@@ -7,6 +7,10 @@ using UnityEngine;
 /// so the experimenter can fine-tune placement against the AprilTag
 /// constellation without having to touch a UI in the headset.
 ///
+/// Input handling is delegated to <see cref="QuestControllerInput"/> — this
+/// class is the policy layer that maps semantic input events to obstacle
+/// transforms and the calibrate trigger.
+///
 /// IMPORTANT: this writes <c>obstacle.transform.localPosition/localRotation</c>,
 /// not CorrectionRoot's. The drift corrector overwrites CorrectionRoot every
 /// Update() while lerping, but it preserves the obstacle's local pose across
@@ -23,14 +27,12 @@ using UnityEngine;
 ///   B (right)  → reset rotation offset to identity
 ///   X + Y both held (left) → reset everything
 ///   Right HandTrigger held + A → (re)calibrate constellation
-///
-/// Stick input is discrete: each push past <c>stickFireThreshold</c> fires one
-/// nudge, and the stick must return below <c>stickRearmThreshold</c> before
-/// another nudge fires. Hold the stick to repeat at <c>repeatRateHz</c>.
 /// </summary>
 public class ObstacleFinesseController : MonoBehaviour
 {
-    [Header("Target")]
+    [Header("Wiring")]
+    [SerializeField] private QuestControllerInput input;
+
     [Tooltip("Pulls the obstacle from ConstellationDriftCorrector.Obstacle when set. Leave the manual target null to use this auto-resolution path.")]
     [SerializeField] private ConstellationDriftCorrector corrector;
 
@@ -43,25 +45,11 @@ public class ObstacleFinesseController : MonoBehaviour
     [SerializeField] private float coarseRotationDegrees = 1f;
     [SerializeField] private float fineRotationDegrees = 0.1f;
 
-    [Header("Stick discretization")]
-    [SerializeField, Range(0.3f, 0.95f)] private float stickFireThreshold = 0.7f;
-    [SerializeField, Range(0.05f, 0.5f)] private float stickRearmThreshold = 0.3f;
-
-    [Tooltip("When stick is held past the fire threshold, repeat nudges at this rate (Hz). Set 0 to disable repeat (one nudge per flick).")]
-    [SerializeField] private float repeatRateHz = 5f;
-
-    [Tooltip("Delay before auto-repeat kicks in after the initial fire (seconds).")]
-    [SerializeField] private float repeatInitialDelaySeconds = 0.35f;
-
     [Header("Feedback")]
     [SerializeField] private bool hapticOnNudge = true;
     [SerializeField, Range(0f, 1f)] private float hapticAmplitude = 0.4f;
     [SerializeField] private float hapticDurationSeconds = 0.04f;
     [SerializeField] private bool logEachNudge = false;
-
-    // Per-axis stick state. Index: 0=Lx, 1=Ly, 2=Rx, 3=Ry. Sign tracks last fired direction.
-    private readonly int[] _firedSign = new int[4];
-    private readonly float[] _nextRepeatTime = new float[4];
 
     private Transform Target
     {
@@ -73,23 +61,46 @@ public class ObstacleFinesseController : MonoBehaviour
         }
     }
 
-    public bool FineMode => OVRInput.Get(OVRInput.Button.PrimaryHandTrigger);
+    public bool FineMode => input && input.IsHeld(OVRInput.Button.PrimaryHandTrigger);
     private float TranslationStep => FineMode ? fineTranslationMeters : coarseTranslationMeters;
     private float RotationStep => FineMode ? fineRotationDegrees : coarseRotationDegrees;
 
     private void Awake()
     {
+        if (!input)
+        {
+            input = GetComponent<QuestControllerInput>();
+            if (!input) input = FindObjectOfType<QuestControllerInput>();
+        }
         if (!corrector && !manualTarget)
         {
             corrector = FindObjectOfType<ConstellationDriftCorrector>();
         }
     }
 
+    private void OnEnable()
+    {
+        if (!input)
+        {
+            Debug.LogError("[FinesseController] No QuestControllerInput found. Disabling.");
+            enabled = false;
+            return;
+        }
+        input.OnStickFire += HandleStickFire;
+    }
+
+    private void OnDisable()
+    {
+        if (input) input.OnStickFire -= HandleStickFire;
+    }
+
     private void Update()
     {
-        // Calibrate chord first — it must work even before an obstacle exists.
-        var rightGrip = OVRInput.Get(OVRInput.Button.SecondaryHandTrigger);
-        if (rightGrip && OVRInput.GetDown(OVRInput.Button.One))
+        if (!input) return;
+
+        // Calibrate chord first — must work even before an obstacle exists.
+        var rightGrip = input.IsHeld(OVRInput.Button.SecondaryHandTrigger);
+        if (rightGrip && input.WasPressedThisFrame(OVRInput.Button.One))
         {
             TriggerCalibrate();
             return;
@@ -98,24 +109,35 @@ public class ObstacleFinesseController : MonoBehaviour
         var target = Target;
         if (!target) return;
 
-        var lStick = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick);
-        var rStick = OVRInput.Get(OVRInput.Axis2D.SecondaryThumbstick);
-
-        // Translation: left stick X→localX, left stick Y→localZ, right stick Y→localY.
-        if (TryConsumeStick(0, lStick.x, out var sx)) NudgeLocal(target, new Vector3(sx * TranslationStep, 0, 0), "X", OVRInput.Controller.LTouch);
-        if (TryConsumeStick(1, lStick.y, out var sz)) NudgeLocal(target, new Vector3(0, 0, sz * TranslationStep), "Z", OVRInput.Controller.LTouch);
-        if (TryConsumeStick(3, rStick.y, out var sy)) NudgeLocal(target, new Vector3(0, sy * TranslationStep, 0), "Y", OVRInput.Controller.RTouch);
-
-        // Rotation: right stick X → yaw around local Y.
-        if (TryConsumeStick(2, rStick.x, out var syaw)) RotateLocalY(target, syaw * RotationStep);
-
-        // Resets — gated on right-grip-released so A doesn't both reset and calibrate.
-        if (!rightGrip && OVRInput.GetDown(OVRInput.Button.One)) ResetPosition(target);
-        if (OVRInput.GetDown(OVRInput.Button.Two)) ResetRotation(target);
-        if (OVRInput.Get(OVRInput.Button.Three) && OVRInput.Get(OVRInput.Button.Four)
-            && (OVRInput.GetDown(OVRInput.Button.Three) || OVRInput.GetDown(OVRInput.Button.Four)))
+        // Resets — A is gated on right-grip-released so it doesn't double as calibrate.
+        if (!rightGrip && input.WasPressedThisFrame(OVRInput.Button.One)) ResetPosition(target);
+        if (input.WasPressedThisFrame(OVRInput.Button.Two)) ResetRotation(target);
+        if (input.IsHeld(OVRInput.Button.Three) && input.IsHeld(OVRInput.Button.Four)
+            && (input.WasPressedThisFrame(OVRInput.Button.Three) || input.WasPressedThisFrame(OVRInput.Button.Four)))
         {
             ResetAll(target);
+        }
+    }
+
+    private void HandleStickFire(QuestControllerInput.StickAxis axis, int sign)
+    {
+        var target = Target;
+        if (!target) return;
+
+        switch (axis)
+        {
+            case QuestControllerInput.StickAxis.LeftX:
+                NudgeLocal(target, new Vector3(sign * TranslationStep, 0, 0), "X", OVRInput.Controller.LTouch);
+                break;
+            case QuestControllerInput.StickAxis.LeftY:
+                NudgeLocal(target, new Vector3(0, 0, sign * TranslationStep), "Z", OVRInput.Controller.LTouch);
+                break;
+            case QuestControllerInput.StickAxis.RightY:
+                NudgeLocal(target, new Vector3(0, sign * TranslationStep, 0), "Y", OVRInput.Controller.RTouch);
+                break;
+            case QuestControllerInput.StickAxis.RightX:
+                RotateLocalY(target, sign * RotationStep);
+                break;
         }
     }
 
@@ -137,46 +159,6 @@ public class ObstacleFinesseController : MonoBehaviour
         Pulse(OVRInput.Controller.LTouch);
         Pulse(OVRInput.Controller.RTouch);
         _ = corrector.Calibrate();
-    }
-
-    /// <summary>
-    /// Returns true and outputs ±1 the first time the axis crosses the fire
-    /// threshold, then again every 1/repeatRateHz while held. Resets when the
-    /// axis returns under the rearm threshold or flips sign.
-    /// </summary>
-    private bool TryConsumeStick(int axisIndex, float value, out int sign)
-    {
-        sign = 0;
-        float abs = Mathf.Abs(value);
-        int currentSign = value > 0 ? 1 : (value < 0 ? -1 : 0);
-
-        // Rearm when stick relaxes or flips direction.
-        if (abs < stickRearmThreshold || currentSign != _firedSign[axisIndex])
-        {
-            if (abs < stickRearmThreshold)
-            {
-                _firedSign[axisIndex] = 0;
-                _nextRepeatTime[axisIndex] = 0f;
-            }
-        }
-
-        if (abs < stickFireThreshold) return false;
-
-        if (_firedSign[axisIndex] != currentSign)
-        {
-            _firedSign[axisIndex] = currentSign;
-            _nextRepeatTime[axisIndex] = Time.time + repeatInitialDelaySeconds;
-            sign = currentSign;
-            return true;
-        }
-
-        if (repeatRateHz > 0f && Time.time >= _nextRepeatTime[axisIndex])
-        {
-            _nextRepeatTime[axisIndex] = Time.time + 1f / repeatRateHz;
-            sign = currentSign;
-            return true;
-        }
-        return false;
     }
 
     private void NudgeLocal(Transform t, Vector3 deltaLocal, string label, OVRInput.Controller pulseOn)
