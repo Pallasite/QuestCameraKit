@@ -24,8 +24,9 @@ public class AprilTagWireframeVisualizer : MonoBehaviour
              "(e.g. Unlit/Color set to bright green) for best visibility.")]
     [SerializeField] private Material wireframeMaterial;
 
-    [Tooltip("Physical tag size in meters. Must match the AprilTagScanner's tagSizeMeters " +
-             "for the wireframe to align with the detected pose.")]
+    [Tooltip("Fallback tag size in meters, used only when no measured size is provided " +
+             "(e.g. the monocular AprilTagScanner). The StereoAprilTagScanner triangulates " +
+             "the size per detection and that value overrides this one.")]
     [SerializeField] private float tagSizeMeters = 0.1f;
 
     private AprilTagDisplayManager _displayManager;
@@ -85,7 +86,8 @@ public class AprilTagWireframeVisualizer : MonoBehaviour
 
         foreach (var pose in _latestPoses)
         {
-            _drawer.Draw(pose.Position, pose.Rotation, tagSizeMeters);
+            var size = pose.SizeMeters > 0f ? pose.SizeMeters : tagSizeMeters;
+            _drawer.Draw(pose.Position, pose.Rotation, size);
         }
     }
 }

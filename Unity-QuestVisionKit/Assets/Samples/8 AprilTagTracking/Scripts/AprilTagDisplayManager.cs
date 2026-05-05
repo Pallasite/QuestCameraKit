@@ -26,12 +26,16 @@ public class AprilTagDisplayManager : MonoBehaviour
 
     /// <summary>
     /// Holds a detected tag's world-space pose after camera transform.
+    /// SizeMeters is the measured edge length when the scanner triangulated
+    /// world corners (stereo); 0 when only an inspector-set size is available
+    /// (monocular).
     /// </summary>
     public struct TagWorldPose
     {
         public int TagId;
         public Vector3 Position;
         public Quaternion Rotation;
+        public float SizeMeters;
     }
 
     [SerializeField] private PlacementMode placementMode = PlacementMode.Direct;
@@ -105,7 +109,8 @@ public class AprilTagDisplayManager : MonoBehaviour
             {
                 TagId = result.tagId,
                 Position = worldPos,
-                Rotation = worldRot
+                Rotation = worldRot,
+                SizeMeters = MeasureTagSize(result.observedCorners)
             });
 
             var marker = GetOrCreateMarker(result.tagId);
@@ -167,6 +172,19 @@ public class AprilTagDisplayManager : MonoBehaviour
         }
 
         return true;
+    }
+
+    // Mean of the 4 triangulated edge lengths. Returns 0 when the scanner
+    // didn't populate world corners (monocular path), letting consumers fall
+    // back to a configured size.
+    private static float MeasureTagSize(Vector3[] corners)
+    {
+        if (corners == null || corners.Length != 4) return 0f;
+        var sum = Vector3.Distance(corners[0], corners[1])
+                + Vector3.Distance(corners[1], corners[2])
+                + Vector3.Distance(corners[2], corners[3])
+                + Vector3.Distance(corners[3], corners[0]);
+        return sum * 0.25f;
     }
 
     private MarkerController GetOrCreateMarker(int tagId)
