@@ -1,6 +1,2 @@
 .claude/
 .claude/worktrees/
-**/Library/
-**/Temp/
-**/Logs/
-**/obj/
