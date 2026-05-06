@@ -43,6 +43,9 @@ public class AprilTagDisplayManager : MonoBehaviour
     [Tooltip("Visual scale multiplier for marker display (does not affect pose accuracy).")]
     [SerializeField] private float markerDisplayScale = 1f;
 
+    [Tooltip("Explicit marker pool reference. Falls back to MarkerPool.Instance if not set.")]
+    [SerializeField] private MarkerPool markerPool;
+
     /// <summary>
     /// Fired each frame that tags are detected, after world poses are computed.
     /// Subscribe from additional visualizers (e.g. AprilTagWireframeVisualizer)
@@ -50,10 +53,15 @@ public class AprilTagDisplayManager : MonoBehaviour
     /// </summary>
     public event Action<TagWorldPose[]> OnTagsDetected;
 
+    private const int MaxConsecutiveErrors = 10;
+
     private IAprilTagScanner _scanner;
     private EnvironmentRaycastManager _envRaycastManager;
     private readonly Dictionary<int, MarkerController> _activeMarkers = new();
+    private readonly List<int> _keysToRemove = new();
     private bool _scanInProgress;
+    private int _consecutiveErrors;
+    private float _backoffUntil;
 
     private void Awake()
     {
@@ -63,11 +71,14 @@ public class AprilTagDisplayManager : MonoBehaviour
         var stereo = GetComponent<StereoAprilTagScanner>();
         _scanner = stereo != null ? (IAprilTagScanner)stereo : GetComponent<AprilTagScanner>();
         _envRaycastManager = GetComponent<EnvironmentRaycastManager>();
+
+        if (!markerPool) markerPool = MarkerPool.Instance;
+        if (!markerPool) Debug.LogWarning("[AprilTagDisplayManager] No MarkerPool assigned and no singleton found. Markers will not spawn.");
     }
 
     private void Update()
     {
-        if (!_scanInProgress) RefreshMarkers();
+        if (!_scanInProgress && Time.time >= _backoffUntil) RefreshMarkers();
     }
 
     private async void RefreshMarkers()
@@ -82,11 +93,24 @@ public class AprilTagDisplayManager : MonoBehaviour
         }
         catch (System.Exception ex)
         {
-            Debug.LogError($"[AprilTagDisplayManager] Scan error: {ex.Message}");
+            _consecutiveErrors++;
+            if (_consecutiveErrors >= MaxConsecutiveErrors)
+            {
+                // Exponential backoff: 1s, 2s, 4s... capped at 16s.
+                var delay = Mathf.Min(16f, Mathf.Pow(2f, _consecutiveErrors - MaxConsecutiveErrors));
+                _backoffUntil = Time.time + delay;
+                Debug.LogError($"[AprilTagDisplayManager] {_consecutiveErrors} consecutive scan errors. " +
+                               $"Backing off for {delay:F1}s. Last error: {ex.Message}");
+            }
+            else
+            {
+                Debug.LogError($"[AprilTagDisplayManager] Scan error ({_consecutiveErrors}/{MaxConsecutiveErrors}): {ex.Message}");
+            }
             _scanInProgress = false;
             return;
         }
 
+        _consecutiveErrors = 0;
         _scanInProgress = false;
 
         if (results == null || results.Length == 0)
@@ -194,7 +218,7 @@ public class AprilTagDisplayManager : MonoBehaviour
             return marker;
         }
 
-        var markerGo = MarkerPool.Instance ? MarkerPool.Instance.GetMarker() : null;
+        var markerGo = markerPool ? markerPool.GetMarker() : null;
         if (!markerGo) return null;
 
         marker = markerGo.GetComponent<MarkerController>();
@@ -206,16 +230,16 @@ public class AprilTagDisplayManager : MonoBehaviour
 
     private void CleanupInactiveMarkers()
     {
-        var keysToRemove = new List<int>();
+        _keysToRemove.Clear();
         foreach (var kvp in _activeMarkers)
         {
             if (!kvp.Value || !kvp.Value.gameObject.activeSelf)
             {
-                keysToRemove.Add(kvp.Key);
+                _keysToRemove.Add(kvp.Key);
             }
         }
 
-        foreach (var key in keysToRemove)
+        foreach (var key in _keysToRemove)
         {
             _activeMarkers.Remove(key);
         }

@@ -90,6 +90,11 @@ public class ConstellationDriftCorrector : MonoBehaviour
     private readonly Dictionary<int, Pose> _referenceLocal = new();
     private readonly Queue<Pose> _candidateBuffer = new();
 
+    // Pre-allocated collections to avoid per-frame GC pressure.
+    private readonly List<Sample> _samples = new();
+    private readonly List<int> _finalInliers = new();
+    private readonly HashSet<int> _inlierSet = new();
+
     private Pose _appliedCorrection = Pose.identity;
     private Pose _lerpFrom;
     private Pose _lerpTo;
@@ -118,7 +123,9 @@ public class ConstellationDriftCorrector : MonoBehaviour
     public float LastResidualRmsMeters => _lastResidualRms;
 
     public event Action OnConstellationCalibrated;
-    public event Action OnCalibrationFailed;
+    public event Action<string> OnCalibrationFailed;
+    /// <summary>Fired during calibration capture: (capturedFrames, totalFrames, uniqueTags).</summary>
+    public event Action<int, int, int> OnCalibrationProgress;
     public event Action<Pose> OnCorrectionTriggered;
     public event Action OnCorrectionCompleted;
     public event Action<string> OnCorrectionRejected;
@@ -217,7 +224,8 @@ public class ConstellationDriftCorrector : MonoBehaviour
                 for (int attempt = 0; attempt < 5; attempt++)
                 {
                     ct.ThrowIfCancellationRequested();
-                    capture = await stereoScanner.ScanCalibrationAsync(calibrationFrameCount, ct);
+                    capture = await stereoScanner.ScanCalibrationAsync(calibrationFrameCount, ct,
+                        (captured, total, tags) => OnCalibrationProgress?.Invoke(captured, total, tags));
                     if (capture != null && capture.Length > 0) break;
                     await Task.Delay(150, ct);
                 }
@@ -229,9 +237,10 @@ public class ConstellationDriftCorrector : MonoBehaviour
             }
             catch (Exception e)
             {
-                Debug.LogError($"[ConstellationDriftCorrector] ScanCalibrationAsync threw: {e.Message}");
+                var reason = $"Scanner exception: {e.Message}";
+                Debug.LogError($"[ConstellationDriftCorrector] {reason}");
                 displayManager.enabled = displayManagerWasEnabled;
-                OnCalibrationFailed?.Invoke();
+                OnCalibrationFailed?.Invoke(reason);
                 return false;
             }
             displayManager.enabled = displayManagerWasEnabled;
@@ -250,8 +259,9 @@ public class ConstellationDriftCorrector : MonoBehaviour
 
             if (filtered.Count < minTagsForCalibration)
             {
-                Debug.LogError($"[ConstellationDriftCorrector] Calibration captured only {filtered.Count} tags (need {minTagsForCalibration}). Previous calibration (if any) is unchanged.");
-                OnCalibrationFailed?.Invoke();
+                var reason = $"Too few tags: captured {filtered.Count}, need {minTagsForCalibration}";
+                Debug.LogError($"[ConstellationDriftCorrector] {reason}. Previous calibration (if any) is unchanged.");
+                OnCalibrationFailed?.Invoke(reason);
                 return false;
             }
 
@@ -355,13 +365,13 @@ public class ConstellationDriftCorrector : MonoBehaviour
         // Project detections into anchor-local space using the *current* anchor
         // world pose. Solving in anchor-local means Kabsch's rigid output IS the
         // CorrectionRoot.localPose directly — no further coordinate conversion.
-        var samples = new List<Sample>(poses.Length);
+        _samples.Clear();
         foreach (var p in poses)
         {
             if (!IsAllowed(p.TagId)) continue;
             if (!_referenceLocal.TryGetValue(p.TagId, out var refLocal)) continue;
 
-            samples.Add(new Sample
+            _samples.Add(new Sample
             {
                 tagId = p.TagId,
                 source = refLocal.position,
@@ -372,7 +382,7 @@ public class ConstellationDriftCorrector : MonoBehaviour
             });
         }
 
-        if (samples.Count < 3)
+        if (_samples.Count < 3)
         {
             _gizmoInliersWorld.Clear();
             _gizmoOutliersWorld.Clear();
@@ -380,7 +390,7 @@ public class ConstellationDriftCorrector : MonoBehaviour
             return;
         }
 
-        if (!RansacKabsch(samples, out var posInliers, out var posPose))
+        if (!RansacKabsch(_samples, out var posInliers, out var posPose))
         {
             _candidateBuffer.Clear();
             OnCorrectionRejected?.Invoke("RANSAC found no consensus");
@@ -390,40 +400,41 @@ public class ConstellationDriftCorrector : MonoBehaviour
         // Rotation gate: drop tags whose rotation disagrees with the consensus
         // solve. Catches misdetections (occlusion, motion blur, edge of frame)
         // earlier than position-only RANSAC would.
-        var finalInliers = new List<int>(posInliers.Count);
+        _finalInliers.Clear();
         for (int i = 0; i < posInliers.Count; i++)
         {
             var idx = posInliers[i];
-            var s = samples[idx];
+            var s = _samples[idx];
             var expectedDet = posPose.rotation * s.refRot;
             if (Quaternion.Angle(expectedDet, s.detRot) <= rotationGateDegrees)
-                finalInliers.Add(idx);
+                _finalInliers.Add(idx);
         }
-        if (finalInliers.Count < 3)
+        if (_finalInliers.Count < 3)
         {
             _candidateBuffer.Clear();
-            OnCorrectionRejected?.Invoke($"Rotation gate rejected too many tags ({posInliers.Count} -> {finalInliers.Count})");
+            OnCorrectionRejected?.Invoke($"Rotation gate rejected too many tags ({posInliers.Count} -> {_finalInliers.Count})");
             return;
         }
 
-        var refined = SolveKabsch(samples, finalInliers);
+        var refined = SolveKabsch(_samples, _finalInliers);
 
         float sumSq = 0f;
-        foreach (var idx in finalInliers)
+        foreach (var idx in _finalInliers)
         {
-            var pred = refined.position + refined.rotation * samples[idx].source;
-            sumSq += (pred - samples[idx].target).sqrMagnitude;
+            var pred = refined.position + refined.rotation * _samples[idx].source;
+            sumSq += (pred - _samples[idx].target).sqrMagnitude;
         }
-        var rms = Mathf.Sqrt(sumSq / finalInliers.Count);
+        var rms = Mathf.Sqrt(sumSq / _finalInliers.Count);
         _lastResidualRms = rms;
 
         _gizmoInliersWorld.Clear();
         _gizmoOutliersWorld.Clear();
-        var inlierSet = new HashSet<int>(finalInliers);
-        for (int i = 0; i < samples.Count; i++)
+        _inlierSet.Clear();
+        foreach (var idx in _finalInliers) _inlierSet.Add(idx);
+        for (int i = 0; i < _samples.Count; i++)
         {
-            if (inlierSet.Contains(i)) _gizmoInliersWorld.Add(samples[i].worldPos);
-            else _gizmoOutliersWorld.Add(samples[i].worldPos);
+            if (_inlierSet.Contains(i)) _gizmoInliersWorld.Add(_samples[i].worldPos);
+            else _gizmoOutliersWorld.Add(_samples[i].worldPos);
         }
 
         if (rms > residualRmsWarnMeters)
@@ -432,6 +443,7 @@ public class ConstellationDriftCorrector : MonoBehaviour
             if (verboseLogging)
                 Debug.LogWarning($"[ConstellationDriftCorrector] Solve RMS {rms * 1000f:F2}mm exceeds {residualRmsWarnMeters * 1000f:F2}mm; discarded.");
             OnCorrectionRejected?.Invoke($"Residual RMS {rms * 1000f:F2}mm too high");
+
             return;
         }
 
@@ -461,7 +473,7 @@ public class ConstellationDriftCorrector : MonoBehaviour
         if (verboseLogging)
         {
             var deltaAng = Quaternion.Angle(_appliedCorrection.rotation, refined.rotation);
-            Debug.Log($"[ConstellationDriftCorrector] Trigger Δpos={deltaPos * 1000f:F1}mm Δrot={deltaAng:F2}° rms={rms * 1000f:F2}mm inliers={finalInliers.Count}/{samples.Count}");
+            Debug.Log($"[ConstellationDriftCorrector] Trigger Δpos={deltaPos * 1000f:F1}mm Δrot={deltaAng:F2}° rms={rms * 1000f:F2}mm inliers={_finalInliers.Count}/{_samples.Count}");
         }
     }
 

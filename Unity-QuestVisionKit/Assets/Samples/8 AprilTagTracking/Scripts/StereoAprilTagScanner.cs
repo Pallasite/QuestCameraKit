@@ -61,6 +61,10 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     [Tooltip("How many frame pairs to capture for a calibration scan. Variance drops with sqrt(N).")]
     [SerializeField] private int calibrationFrameCount = 16;
 
+    [Tooltip("Maximum time (seconds) to wait for both cameras to deliver a frame pair before giving up. " +
+             "Prevents AcquirePairAsync from blocking indefinitely if a camera never comes online.")]
+    [SerializeField] private float acquireTimeoutSeconds = 2f;
+
     [Header("Diagnostics")]
     [Tooltip("Pose-from-corners solver. Kabsch is the optimal rigid fit and is more stable; " +
              "NaiveCross is the original cross-product method, kept toggleable for A/B comparison on device.")]
@@ -80,6 +84,10 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     private Vector2Int _detectorResolution;
     private int _detectorDecimation = -1;
     private bool _isScanning;
+
+    // Pre-allocated collections to avoid per-frame GC pressure.
+    private readonly Dictionary<int, RawTagDetection> _rightById = new();
+    private readonly List<AprilTagResult> _triangulateResults = new();
 
     private static readonly int Input1 = Shader.PropertyToID("_Input");
     private static readonly int Output = Shader.PropertyToID("_Output");
@@ -101,6 +109,18 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     {
         public float fx, fy, cx, cy;
     }
+
+    #if UNITY_EDITOR
+    private void OnValidate()
+    {
+        if (leftCamera && rightCamera
+            && leftCamera.CameraPosition == rightCamera.CameraPosition)
+        {
+            Debug.LogWarning($"[StereoAprilTagScanner] Both cameras are set to {leftCamera.CameraPosition}. " +
+                             "Assign one Left and one Right for stereo triangulation to work.");
+        }
+    }
+    #endif
 
     private void Awake()
     {
@@ -171,7 +191,7 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     /// Heavy — typically 0.5-2 seconds depending on frameCount and resolution.
     /// Use for one-time anchor seeding or periodic drift correction, not per-frame.
     /// </summary>
-    public async Task<AprilTagResult[]> ScanCalibrationAsync(int frameCount = -1, CancellationToken ct = default)
+    public async Task<AprilTagResult[]> ScanCalibrationAsync(int frameCount = -1, CancellationToken ct = default, Action<int, int, int> onProgress = null)
     {
         if (frameCount <= 0) frameCount = calibrationFrameCount;
         if (_isScanning || !_downsampleShader || !leftCamera || !rightCamera)
@@ -216,6 +236,8 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
                 }
 
                 captured++;
+                // (capturedFrames, totalFrames, uniqueTagsSoFar)
+                onProgress?.Invoke(captured, frameCount, observations.Count);
             }
 
             var results = new List<AprilTagResult>(observations.Count);
@@ -303,18 +325,18 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
         var leftIntr = ScaleIntrinsics(left.Intrinsics, left.Resolution, width, height);
         var rightIntr = ScaleIntrinsics(right.Intrinsics, right.Resolution, width, height);
 
-        var rightById = new Dictionary<int, RawTagDetection>();
+        _rightById.Clear();
         foreach (var d in _rightDetector.Detections)
         {
             if (d.DecisionMargin < minDecisionMargin) continue;
-            rightById[d.ID] = d;
+            _rightById[d.ID] = d;
         }
 
-        var results = new List<AprilTagResult>();
+        _triangulateResults.Clear();
         foreach (var leftDet in _leftDetector.Detections)
         {
             if (leftDet.DecisionMargin < minDecisionMargin) continue;
-            if (!rightById.TryGetValue(leftDet.ID, out var rightDet)) continue;
+            if (!_rightById.TryGetValue(leftDet.ID, out var rightDet)) continue;
 
             var worldCorners = new Vector3[4];
             for (int i = 0; i < 4; i++)
@@ -336,7 +358,7 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
                 (left.Pose.position + right.Pose.position) * 0.5f,
                 Quaternion.Slerp(left.Pose.rotation, right.Pose.rotation, 0.5f));
 
-            results.Add(new AprilTagResult
+            _triangulateResults.Add(new AprilTagResult
             {
                 tagId = leftDet.ID,
                 worldPoseOverride = new Pose(pos, rot),
@@ -349,7 +371,7 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
             });
         }
 
-        return results.ToArray();
+        return _triangulateResults.ToArray();
     }
 
     private static Vector2 GetCorner(RawTagDetection d, int i) => i switch
@@ -540,9 +562,10 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
 
     private async Task<(CaptureFrame left, CaptureFrame right)?> AcquirePairAsync(CancellationToken ct = default)
     {
-        // Poll until both cameras yield a frame this update. Same wait pattern
-        // as the monocular scanner, just for the pair.
-        while (true)
+        // Poll until both cameras yield a frame this update. Times out to
+        // prevent an infinite hang if a camera never comes online.
+        var deadline = Time.realtimeSinceStartup + acquireTimeoutSeconds;
+        while (Time.realtimeSinceStartup < deadline)
         {
             ct.ThrowIfCancellationRequested();
             var l = TryGetFrame(leftCamera);
@@ -550,6 +573,10 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
             if (l.HasValue && r.HasValue) return (l.Value, r.Value);
             await Task.Delay(16, ct);
         }
+        Debug.LogWarning($"[StereoAprilTagScanner] AcquirePairAsync timed out after {acquireTimeoutSeconds}s — " +
+                         $"left playing: {(leftCamera ? leftCamera.IsPlaying : false)}, " +
+                         $"right playing: {(rightCamera ? rightCamera.IsPlaying : false)}");
+        return null;
     }
 
     private static CaptureFrame? TryGetFrame(PassthroughCameraAccess cam)

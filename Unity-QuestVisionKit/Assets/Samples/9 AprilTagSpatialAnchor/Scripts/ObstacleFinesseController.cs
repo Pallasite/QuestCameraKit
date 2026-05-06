@@ -70,11 +70,11 @@ public class ObstacleFinesseController : MonoBehaviour
         if (!input)
         {
             input = GetComponent<QuestControllerInput>();
-            if (!input) input = FindObjectOfType<QuestControllerInput>();
+            if (!input) Debug.LogWarning("[FinesseController] No QuestControllerInput assigned or found on this GameObject. Assign one in the Inspector.");
         }
         if (!corrector && !manualTarget)
         {
-            corrector = FindObjectOfType<ConstellationDriftCorrector>();
+            Debug.LogWarning("[FinesseController] No ConstellationDriftCorrector or manual target assigned. Assign one in the Inspector.");
         }
     }
 
@@ -87,11 +87,47 @@ public class ObstacleFinesseController : MonoBehaviour
             return;
         }
         input.OnStickFire += HandleStickFire;
+        if (corrector)
+        {
+            corrector.OnConstellationCalibrated += HandleCalibrationSuccess;
+            corrector.OnCalibrationFailed += HandleCalibrationFailure;
+        }
     }
 
     private void OnDisable()
     {
         if (input) input.OnStickFire -= HandleStickFire;
+        if (corrector)
+        {
+            corrector.OnConstellationCalibrated -= HandleCalibrationSuccess;
+            corrector.OnCalibrationFailed -= HandleCalibrationFailure;
+        }
+    }
+
+    private void HandleCalibrationSuccess()
+    {
+        // Double-tap both controllers on success.
+        StartCoroutine(DoublePulse());
+    }
+
+    private void HandleCalibrationFailure(string reason)
+    {
+        // Long buzz on both controllers on failure.
+        if (!hapticOnNudge) return;
+        OVRInput.SetControllerVibration(1f, hapticAmplitude * 0.8f, OVRInput.Controller.LTouch);
+        OVRInput.SetControllerVibration(1f, hapticAmplitude * 0.8f, OVRInput.Controller.RTouch);
+        CancelInvoke(nameof(StopHaptics));
+        Invoke(nameof(StopHaptics), 0.3f);
+    }
+
+    private System.Collections.IEnumerator DoublePulse()
+    {
+        if (!hapticOnNudge) yield break;
+        Pulse(OVRInput.Controller.LTouch);
+        Pulse(OVRInput.Controller.RTouch);
+        yield return new WaitForSeconds(0.12f);
+        Pulse(OVRInput.Controller.LTouch);
+        Pulse(OVRInput.Controller.RTouch);
     }
 
     private void Update()
