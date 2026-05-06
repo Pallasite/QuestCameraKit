@@ -51,6 +51,13 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
              "Larger deltas mean the user moved their head between L and R captures and triangulation rays no longer share a moment.")]
     [SerializeField] private float maxFrameTimeDeltaMs = 30f;
 
+    [Header("Tag Geometry")]
+    [Tooltip("Physical edge length of the AprilTag's black border in meters. Used by the " +
+             "KabschRescaledRadial pose solver (and by future size-aware solvers) to correct " +
+             "the radial depth bias inherent in stereo triangulation. Measure with calipers — " +
+             "a 1 mm error on a 171 mm tag is ~0.6% systematic depth bias.")]
+    [SerializeField] private float tagSizeMeters = 0.171f;
+
     [Header("Calibration Mode (used by ScanCalibrationAsync)")]
     [Tooltip("Sample factor for one-shot high-quality scans. 1 = full camera resolution (recommended).")]
     [SerializeField] private int calibrationSampleFactor = 1;
@@ -67,13 +74,32 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
 
     [Header("Diagnostics")]
     [Tooltip("Pose-from-corners solver. Kabsch is the optimal rigid fit and is more stable; " +
-             "NaiveCross is the original cross-product method, kept toggleable for A/B comparison on device.")]
+             "NaiveCross is the original cross-product method, kept toggleable for A/B comparison; " +
+             "KabschRescaledRadial additionally rescales the triangulated corners about the camera " +
+             "midpoint so their mean edge length matches tagSizeMeters, correcting the radial " +
+             "depth bias inherent in stereo triangulation.")]
     [SerializeField] private RotationSolver rotationSolver = RotationSolver.Kabsch;
 
     public enum RotationSolver
     {
         NaiveCross,
         Kabsch,
+
+        // Option 1: scale triangulated corners radially about the camera midpoint
+        // so their mean edge length matches tagSizeMeters, then run Kabsch. Stereo
+        // triangulation error is approximately a radial scaling from the cameras
+        // (depth and lateral spread covary with depth), so a single isotropic
+        // correction fixes the dominant depth bias for free.
+        KabschRescaledRadial,
+
+        // Planned (not yet implemented):
+        // KabschTemplateFit  - 6-DOF rigid fit of a known local template (square of
+        //                      edge tagSizeMeters) to the triangulated corners, using
+        //                      the size prior on position rather than just shape.
+        // StereoPnP          - replaces triangulate-then-fit. Nonlinear least squares
+        //                      over 6-DOF pose using all 8 pixel observations + per-eye
+        //                      intrinsics + tagSizeMeters; strongest constraint, needs
+        //                      a small Levenberg-Marquardt loop.
     }
 
     private ComputeShader _downsampleShader;
@@ -332,6 +358,12 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
             _rightById[d.ID] = d;
         }
 
+        // Synthesize a "camera pose" at the midpoint of the two lenses for callers
+        // (e.g. EnvironmentRaycast) that still want a ray origin. The position is
+        // also the radial-rescale anchor for KabschRescaledRadial.
+        var midpointPos = (left.Pose.position + right.Pose.position) * 0.5f;
+        var midpointRot = Quaternion.Slerp(left.Pose.rotation, right.Pose.rotation, 0.5f);
+
         _triangulateResults.Clear();
         foreach (var leftDet in _leftDetector.Detections)
         {
@@ -350,19 +382,22 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
                 worldCorners[i] = TriangulateRays(left.Pose.position, lDir, right.Pose.position, rDir);
             }
 
-            var (pos, rot) = PoseFromCorners(worldCorners);
+            // Apply size-prior corrections per-enum-mode before pose extraction, so
+            // observedCorners reflects the corrected rigid geometry. Calibration
+            // mode medians these corners across frames, and the wireframe visualizer
+            // reads them via AprilTagDisplayManager.MeasureTagSize.
+            if (rotationSolver == RotationSolver.KabschRescaledRadial && tagSizeMeters > 0f)
+            {
+                RescaleCornersRadially(worldCorners, midpointPos, tagSizeMeters);
+            }
 
-            // Synthesize a "camera pose" at the midpoint of the two lenses for callers
-            // (e.g. EnvironmentRaycast) that still want a ray origin.
-            var midpoint = new Pose(
-                (left.Pose.position + right.Pose.position) * 0.5f,
-                Quaternion.Slerp(left.Pose.rotation, right.Pose.rotation, 0.5f));
+            var (pos, rot) = PoseFromCorners(worldCorners);
 
             _triangulateResults.Add(new AprilTagResult
             {
                 tagId = leftDet.ID,
                 worldPoseOverride = new Pose(pos, rot),
-                cameraPose = midpoint,
+                cameraPose = new Pose(midpointPos, midpointRot),
                 intrinsics = left.Intrinsics,
                 captureResolution = left.Resolution,
                 observedCorners = worldCorners,
@@ -428,11 +463,34 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     //   3 = (-0.5, +0.5, 0)   top-left
     private (Vector3 pos, Quaternion rot) PoseFromCorners(Vector3[] c)
     {
+        // KabschRescaledRadial falls through to Kabsch — the radial rescale, when
+        // applicable, is applied upstream in Triangulate so the stored observedCorners
+        // reflect the corrected geometry. Future template-fit / PnP modes will need
+        // additional inputs (tagSize, pixel observations, intrinsics) that don't fit
+        // this signature; route them through Triangulate instead, the same way.
         return rotationSolver switch
         {
-            RotationSolver.Kabsch => PoseFromCornersKabsch(c),
-            _ => PoseFromCornersNaive(c),
+            RotationSolver.NaiveCross => PoseFromCornersNaive(c),
+            _ => PoseFromCornersKabsch(c),
         };
+    }
+
+    // Stereo triangulation error is approximately a radial scaling about the camera
+    // midpoint: depth uncertainty along the gaze axis is the dominant noise term, and
+    // the world-space lateral spread of the corners scales with that depth (since
+    // pixel angle × depth = world distance). One isotropic rescale that pins the mean
+    // edge length to the known tagSize therefore corrects depth bias and the mirrored
+    // lateral spread in a single pass. Mutates corners in place.
+    private static void RescaleCornersRadially(Vector3[] c, Vector3 cameraMidpoint, float tagSize)
+    {
+        float meanEdge = (Vector3.Distance(c[0], c[1]) + Vector3.Distance(c[1], c[2]) +
+                          Vector3.Distance(c[2], c[3]) + Vector3.Distance(c[3], c[0])) * 0.25f;
+        if (meanEdge < 1e-6f) return;
+        float scale = tagSize / meanEdge;
+        for (int i = 0; i < 4; i++)
+        {
+            c[i] = cameraMidpoint + (c[i] - cameraMidpoint) * scale;
+        }
     }
 
     // Original method: averaged parallel edges + Quaternion.LookRotation. Kept as a
