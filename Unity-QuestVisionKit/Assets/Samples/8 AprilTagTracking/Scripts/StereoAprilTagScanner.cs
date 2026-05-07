@@ -53,9 +53,9 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
 
     [Header("Tag Geometry")]
     [Tooltip("Physical edge length of the AprilTag's black border in meters. Used by the " +
-             "KabschRescaledRadial pose solver (and by future size-aware solvers) to correct " +
-             "the radial depth bias inherent in stereo triangulation. Measure with calipers — " +
-             "a 1 mm error on a 171 mm tag is ~0.6% systematic depth bias.")]
+             "size-aware pose solvers (KabschRescaledRadial, KabschTemplateFit, StereoPnP) " +
+             "and by the corner residual diagnostic. Measure with calipers — a 1 mm error on " +
+             "a 171 mm tag is ~0.6% systematic depth bias.")]
     [SerializeField] private float tagSizeMeters = 0.171f;
 
     [Header("Calibration Mode (used by ScanCalibrationAsync)")]
@@ -73,12 +73,34 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     [SerializeField] private float acquireTimeoutSeconds = 2f;
 
     [Header("Diagnostics")]
-    [Tooltip("Pose-from-corners solver. Kabsch is the optimal rigid fit and is more stable; " +
-             "NaiveCross is the original cross-product method, kept toggleable for A/B comparison; " +
-             "KabschRescaledRadial additionally rescales the triangulated corners about the camera " +
-             "midpoint so their mean edge length matches tagSizeMeters, correcting the radial " +
-             "depth bias inherent in stereo triangulation.")]
+    [Tooltip("Pose-from-corners solver. Five modes form an accuracy/cost ladder for the methods-section " +
+             "comparison: NaiveCross (cross-product, no size prior), Kabsch (planar Procrustes, no size prior), " +
+             "KabschRescaledRadial (Kabsch + radial depth correction from tagSizeMeters), KabschTemplateFit " +
+             "(Horn 1987 quaternion 3D Procrustes against the known-size template, augmenting plane normal), " +
+             "and StereoPnP (Levenberg-Marquardt over 6-DOF pose minimizing per-eye pixel reprojection of the " +
+             "rigid 4-corner template).")]
     [SerializeField] private RotationSolver rotationSolver = RotationSolver.Kabsch;
+
+    /// <summary>
+    /// Runtime accessor for the active pose solver. Lets experiments cycle
+    /// through modes (e.g. via a UI toggle) without round-tripping through
+    /// SerializedObject.
+    /// </summary>
+    public RotationSolver Solver
+    {
+        get => rotationSolver;
+        set => rotationSolver = value;
+    }
+
+    /// <summary>
+    /// Runtime accessor for the physical tag edge length in meters. Used by
+    /// the size-aware solvers (KabschRescaledRadial, KabschTemplateFit, StereoPnP).
+    /// </summary>
+    public float TagSizeMeters
+    {
+        get => tagSizeMeters;
+        set => tagSizeMeters = value;
+    }
 
     public enum RotationSolver
     {
@@ -92,14 +114,23 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
         // correction fixes the dominant depth bias for free.
         KabschRescaledRadial,
 
-        // Planned (not yet implemented):
-        // KabschTemplateFit  - 6-DOF rigid fit of a known local template (square of
-        //                      edge tagSizeMeters) to the triangulated corners, using
-        //                      the size prior on position rather than just shape.
-        // StereoPnP          - replaces triangulate-then-fit. Nonlinear least squares
-        //                      over 6-DOF pose using all 8 pixel observations + per-eye
-        //                      intrinsics + tagSizeMeters; strongest constraint, needs
-        //                      a small Levenberg-Marquardt loop.
+        // Option 2: Horn 1987 quaternion-based 3D Procrustes against the known-size
+        // local template, augmented with an out-of-plane point along the world plane
+        // normal to break the coplanar rank deficiency. Uses all 9 entries of the 3x3
+        // cross-covariance (vs the 4 entries of the 2x2 in the planar Kabsch
+        // specialization), so it can produce a different rotation when corner noise
+        // has out-of-plane structure. Closed-form via Jacobi eigendecomposition on
+        // the 4x4 symmetric N matrix.
+        KabschTemplateFit,
+
+        // Option 3: Levenberg-Marquardt over the 6-DOF tag pose minimizing the
+        // pixel reprojection error of the rigid 4-corner template (size = tagSizeMeters)
+        // in BOTH eyes simultaneously. 16 residuals (4 corners x 2 cameras x 2 image
+        // axes) vs 6 unknowns (3 position + 3 axis-angle tangent-space rotation) is
+        // the strongest constraint of the five modes — it uses raw pixel observations
+        // directly without committing to intermediate triangulation. Initial guess
+        // from Kabsch on triangulated corners.
+        StereoPnP,
     }
 
     private ComputeShader _downsampleShader;
@@ -114,6 +145,27 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     // Pre-allocated collections to avoid per-frame GC pressure.
     private readonly Dictionary<int, RawTagDetection> _rightById = new();
     private readonly List<AprilTagResult> _triangulateResults = new();
+
+    // Per-detection scratch buffers reused across the dispatch in ResolvePose.
+    // Pixel arrays hold the 4 corner observations from each eye (StereoPnP needs
+    // them; the corner-only modes ignore them). worldCorners is the triangulated
+    // 3D corner buffer that downstream solvers operate on.
+    private readonly Vector2[] _leftPixels = new Vector2[4];
+    private readonly Vector2[] _rightPixels = new Vector2[4];
+
+    // Jacobi 4x4 eigendecomposition workspace for KabschTemplateFit.
+    private readonly float[,] _jacobiN = new float[4, 4];
+    private readonly float[,] _jacobiV = new float[4, 4];
+
+    // Levenberg-Marquardt workspace for StereoPnP. Sized for 16 residuals and
+    // 6 unknowns (3 position + 3 axis-angle tangent-space rotation).
+    private readonly float[] _pnpResiduals = new float[16];
+    private readonly float[] _pnpResidualsTrial = new float[16];
+    private readonly float[,] _pnpJacobian = new float[16, 6];
+    private readonly float[,] _pnpHessian = new float[6, 6];
+    private readonly float[] _pnpGradient = new float[6];
+    private readonly float[,] _pnpAugmented = new float[6, 7];
+    private readonly Vector3[] _pnpLocalCorners = new Vector3[4];
 
     private static readonly int Input1 = Shader.PropertyToID("_Input");
     private static readonly int Output = Shader.PropertyToID("_Output");
@@ -276,6 +328,9 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
                     medianCorners[c] = ComponentwiseMedian(kvp.Value, c);
                 }
                 var (pos, rot) = PoseFromCorners(medianCorners);
+                float residual = (tagSizeMeters > 0f)
+                    ? RigidTemplateResidualRms(medianCorners, pos, rot, tagSizeMeters)
+                    : 0f;
                 results.Add(new AprilTagResult
                 {
                     tagId = kvp.Key,
@@ -284,6 +339,8 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
                     intrinsics = leftCamera.Intrinsics,
                     captureResolution = leftCamera.CurrentResolution,
                     observedCorners = medianCorners,
+                    solverUsed = rotationSolver,
+                    cornerResidualMeters = residual,
                 });
             }
             return results.ToArray();
@@ -370,28 +427,27 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
             if (leftDet.DecisionMargin < minDecisionMargin) continue;
             if (!_rightById.TryGetValue(leftDet.ID, out var rightDet)) continue;
 
+            // Capture per-corner pixel observations and triangulated 3D positions
+            // up front. The pixels are needed by StereoPnP; the corner-only modes
+            // ignore them.
             var worldCorners = new Vector3[4];
             for (int i = 0; i < 4; i++)
             {
-                var lPx = GetCorner(leftDet, i);
-                var rPx = GetCorner(rightDet, i);
+                _leftPixels[i] = GetCorner(leftDet, i);
+                _rightPixels[i] = GetCorner(rightDet, i);
 
-                var lDir = PixelToWorldDirection(lPx, leftIntr, left.Pose.rotation);
-                var rDir = PixelToWorldDirection(rPx, rightIntr, right.Pose.rotation);
+                var lDir = PixelToWorldDirection(_leftPixels[i], leftIntr, left.Pose.rotation);
+                var rDir = PixelToWorldDirection(_rightPixels[i], rightIntr, right.Pose.rotation);
 
                 worldCorners[i] = TriangulateRays(left.Pose.position, lDir, right.Pose.position, rDir);
             }
 
-            // Apply size-prior corrections per-enum-mode before pose extraction, so
-            // observedCorners reflects the corrected rigid geometry. Calibration
-            // mode medians these corners across frames, and the wireframe visualizer
-            // reads them via AprilTagDisplayManager.MeasureTagSize.
-            if (rotationSolver == RotationSolver.KabschRescaledRadial && tagSizeMeters > 0f)
-            {
-                RescaleCornersRadially(worldCorners, midpointPos, tagSizeMeters);
-            }
-
-            var (pos, rot) = PoseFromCorners(worldCorners);
+            var (pos, rot, residual) = ResolvePose(
+                worldCorners,
+                _leftPixels, _rightPixels,
+                leftIntr, rightIntr,
+                left.Pose, right.Pose,
+                midpointPos);
 
             _triangulateResults.Add(new AprilTagResult
             {
@@ -401,12 +457,113 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
                 intrinsics = left.Intrinsics,
                 captureResolution = left.Resolution,
                 observedCorners = worldCorners,
+                solverUsed = rotationSolver,
+                cornerResidualMeters = residual,
                 // localPosition / localRotation left default — display manager uses
                 // worldPoseOverride and ignores these when the override is set.
             });
         }
 
         return _triangulateResults.ToArray();
+    }
+
+    /// <summary>
+    /// Single dispatch point for all five pose-extraction modes. Mutates the
+    /// passed-in corners array in place when the mode is corner-rewriting
+    /// (KabschRescaledRadial rescales radially; KabschTemplateFit and StereoPnP
+    /// rebuild it as the rigid template at the fitted pose so observedCorners
+    /// reflects the optimized geometry for the wireframe visualizer and for
+    /// calibration's component-wise median across frames).
+    /// </summary>
+    private (Vector3 pos, Quaternion rot, float cornerResidualMeters) ResolvePose(
+        Vector3[] worldCorners,
+        Vector2[] leftPixels, Vector2[] rightPixels,
+        ScaledIntrinsics leftIntr, ScaledIntrinsics rightIntr,
+        Pose leftCam, Pose rightCam,
+        Vector3 cameraMidpoint)
+    {
+        Vector3 pos;
+        Quaternion rot;
+        switch (rotationSolver)
+        {
+            case RotationSolver.NaiveCross:
+                (pos, rot) = PoseFromCornersNaive(worldCorners);
+                break;
+
+            case RotationSolver.KabschRescaledRadial:
+                if (tagSizeMeters > 0f)
+                {
+                    RescaleCornersRadially(worldCorners, cameraMidpoint, tagSizeMeters);
+                }
+                (pos, rot) = PoseFromCornersKabsch(worldCorners);
+                break;
+
+            case RotationSolver.KabschTemplateFit:
+                (pos, rot) = PoseFromCornersTemplateFit(worldCorners, tagSizeMeters);
+                RebuildCornersFromPose(worldCorners, pos, rot, tagSizeMeters);
+                break;
+
+            case RotationSolver.StereoPnP:
+                {
+                    var (initPos, initRot) = PoseFromCornersKabsch(worldCorners);
+                    (pos, rot) = StereoPnPRefine(
+                        initPos, initRot,
+                        leftPixels, rightPixels,
+                        leftIntr, rightIntr,
+                        leftCam, rightCam,
+                        tagSizeMeters);
+                    RebuildCornersFromPose(worldCorners, pos, rot, tagSizeMeters);
+                }
+                break;
+
+            case RotationSolver.Kabsch:
+            default:
+                (pos, rot) = PoseFromCornersKabsch(worldCorners);
+                break;
+        }
+
+        float residual = (tagSizeMeters > 0f)
+            ? RigidTemplateResidualRms(worldCorners, pos, rot, tagSizeMeters)
+            : 0f;
+
+        return (pos, rot, residual);
+    }
+
+    /// <summary>
+    /// RMS distance between observed corners and the rigid template (size =
+    /// tagSize) placed at the fitted pose. Uniform accuracy proxy across all
+    /// five solver modes — for StereoPnP this is comparable to the Kabsch
+    /// modes' residual even though LM internally minimizes pixel error.
+    /// </summary>
+    private static float RigidTemplateResidualRms(Vector3[] corners, Vector3 pos, Quaternion rot, float tagSize)
+    {
+        float h = tagSize * 0.5f;
+        var l0 = pos + rot * new Vector3(-h, -h, 0f);
+        var l1 = pos + rot * new Vector3(+h, -h, 0f);
+        var l2 = pos + rot * new Vector3(+h, +h, 0f);
+        var l3 = pos + rot * new Vector3(-h, +h, 0f);
+
+        float sum =
+            (corners[0] - l0).sqrMagnitude +
+            (corners[1] - l1).sqrMagnitude +
+            (corners[2] - l2).sqrMagnitude +
+            (corners[3] - l3).sqrMagnitude;
+        return Mathf.Sqrt(sum * 0.25f);
+    }
+
+    /// <summary>
+    /// Overwrites corners with the rigid template (size = tagSize) at the given
+    /// pose. Used by KabschTemplateFit and StereoPnP so observedCorners reflects
+    /// the optimized rigid geometry rather than the raw triangulated points.
+    /// </summary>
+    private static void RebuildCornersFromPose(Vector3[] corners, Vector3 pos, Quaternion rot, float tagSize)
+    {
+        if (tagSize <= 0f) return;
+        float h = tagSize * 0.5f;
+        corners[0] = pos + rot * new Vector3(-h, -h, 0f);
+        corners[1] = pos + rot * new Vector3(+h, -h, 0f);
+        corners[2] = pos + rot * new Vector3(+h, +h, 0f);
+        corners[3] = pos + rot * new Vector3(-h, +h, 0f);
     }
 
     private static Vector2 GetCorner(RawTagDetection d, int i) => i switch
@@ -461,16 +618,20 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     //   1 = (+0.5, -0.5, 0)   bottom-right
     //   2 = (+0.5, +0.5, 0)   top-right
     //   3 = (-0.5, +0.5, 0)   top-left
+    /// <summary>
+    /// Corner-only pose dispatcher used by ScanCalibrationAsync's final fit
+    /// (which medians per-frame observedCorners and has no surviving pixel
+    /// observations, so StereoPnP is unavailable). KabschRescaledRadial also
+    /// has no surviving per-frame camera midpoint here, so it falls through
+    /// to plain Kabsch — the per-frame corners are already radially rescaled
+    /// at capture time, so the median is already in size-corrected geometry.
+    /// </summary>
     private (Vector3 pos, Quaternion rot) PoseFromCorners(Vector3[] c)
     {
-        // KabschRescaledRadial falls through to Kabsch — the radial rescale, when
-        // applicable, is applied upstream in Triangulate so the stored observedCorners
-        // reflect the corrected geometry. Future template-fit / PnP modes will need
-        // additional inputs (tagSize, pixel observations, intrinsics) that don't fit
-        // this signature; route them through Triangulate instead, the same way.
         return rotationSolver switch
         {
             RotationSolver.NaiveCross => PoseFromCornersNaive(c),
+            RotationSolver.KabschTemplateFit => PoseFromCornersTemplateFit(c, tagSizeMeters),
             _ => PoseFromCornersKabsch(c),
         };
     }
@@ -583,6 +744,429 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
         new Vector2(+0.5f, +0.5f),
         new Vector2(-0.5f, +0.5f),
     };
+
+    // Horn 1987 quaternion-based 3D Procrustes against the known-size local
+    // template. Differs from PoseFromCornersKabsch in that it uses a full 3D
+    // Procrustes formulation — including the out-of-plane covariance terms —
+    // rather than the closed-form planar specialization. The 4 coplanar corners
+    // are augmented with a synthetic 5th point along the world plane normal at
+    // distance tagSize/2 to break the rank deficiency that planar SVD would
+    // otherwise hit. The optimal rotation is the unit quaternion corresponding
+    // to the largest eigenvalue of Horn's 4x4 symmetric N matrix; we extract it
+    // via Jacobi rotations in JacobiEigen4x4.
+    //
+    // Position is the centroid of the 4 main world corners (same as Kabsch);
+    // a rigid Procrustes fit's optimal translation under L2 is always the
+    // target centroid when the source centroid is at the origin.
+    private (Vector3 pos, Quaternion rot) PoseFromCornersTemplateFit(Vector3[] c, float tagSize)
+    {
+        if (tagSize <= 0f) return PoseFromCornersKabsch(c);
+
+        var centroid = (c[0] + c[1] + c[2] + c[3]) * 0.25f;
+
+        // World plane normal from cross of diagonals — sign-checked against the
+        // implied tag-local +Z so the augmenting point lands on the correct side.
+        var diag1 = c[2] - c[0];
+        var diag2 = c[3] - c[1];
+        var normal = Vector3.Cross(diag1, diag2);
+        if (normal.sqrMagnitude < 1e-10f) return (centroid, Quaternion.identity);
+        normal.Normalize();
+        var impliedZ = Vector3.Cross(c[1] - c[0], c[3] - c[0]);
+        if (Vector3.Dot(impliedZ, normal) < 0f) normal = -normal;
+
+        // Source = local template (centered at origin, tagSize × tagSize) plus
+        // a 5th point along +Z. Target = world corners centered at centroid plus
+        // a 5th point along the world normal at the same scale.
+        float h = tagSize * 0.5f;
+        float aug = tagSize * 0.5f;
+
+        // Build the cross-covariance M = Σ s_i ⊗ t_i (3x3, NOT symmetric).
+        // The 5 (source, target) pairs are inlined to keep the per-tag cost flat.
+        var t0 = c[0] - centroid;
+        var t1 = c[1] - centroid;
+        var t2 = c[2] - centroid;
+        var t3 = c[3] - centroid;
+        var t4 = normal * aug;
+
+        // Source vectors: (-h,-h,0), (+h,-h,0), (+h,+h,0), (-h,+h,0), (0,0,aug)
+        // M[i,j] = sum_k s_k[i] * t_k[j]
+        float Mxx = (-h) * t0.x + (+h) * t1.x + (+h) * t2.x + (-h) * t3.x;
+        float Mxy = (-h) * t0.y + (+h) * t1.y + (+h) * t2.y + (-h) * t3.y;
+        float Mxz = (-h) * t0.z + (+h) * t1.z + (+h) * t2.z + (-h) * t3.z;
+        float Myx = (-h) * t0.x + (-h) * t1.x + (+h) * t2.x + (+h) * t3.x;
+        float Myy = (-h) * t0.y + (-h) * t1.y + (+h) * t2.y + (+h) * t3.y;
+        float Myz = (-h) * t0.z + (-h) * t1.z + (+h) * t2.z + (+h) * t3.z;
+        float Mzx = aug * t4.x;
+        float Mzy = aug * t4.y;
+        float Mzz = aug * t4.z;
+
+        // Horn's 4x4 symmetric N matrix (eigenvector for largest eigenvalue is
+        // the optimal quaternion (qw, qx, qy, qz)).
+        var N = _jacobiN;
+        N[0, 0] = Mxx + Myy + Mzz;
+        N[0, 1] = Myz - Mzy; N[1, 0] = N[0, 1];
+        N[0, 2] = Mzx - Mxz; N[2, 0] = N[0, 2];
+        N[0, 3] = Mxy - Myx; N[3, 0] = N[0, 3];
+        N[1, 1] = Mxx - Myy - Mzz;
+        N[1, 2] = Mxy + Myx; N[2, 1] = N[1, 2];
+        N[1, 3] = Mzx + Mxz; N[3, 1] = N[1, 3];
+        N[2, 2] = -Mxx + Myy - Mzz;
+        N[2, 3] = Myz + Mzy; N[3, 2] = N[2, 3];
+        N[3, 3] = -Mxx - Myy + Mzz;
+
+        var V = _jacobiV;
+        for (int i = 0; i < 4; i++)
+            for (int j = 0; j < 4; j++)
+                V[i, j] = (i == j) ? 1f : 0f;
+
+        JacobiEigen4x4(N, V);
+
+        // Largest eigenvalue's eigenvector is column maxIdx of V after Jacobi.
+        int maxIdx = 0;
+        float maxEig = N[0, 0];
+        for (int i = 1; i < 4; i++)
+        {
+            if (N[i, i] > maxEig) { maxEig = N[i, i]; maxIdx = i; }
+        }
+
+        float qw = V[0, maxIdx];
+        float qx = V[1, maxIdx];
+        float qy = V[2, maxIdx];
+        float qz = V[3, maxIdx];
+
+        // Renormalize to defend against accumulated rounding inside the sweep.
+        float qNorm = Mathf.Sqrt(qw * qw + qx * qx + qy * qy + qz * qz);
+        if (qNorm < 1e-10f) return (centroid, Quaternion.identity);
+        float invQ = 1f / qNorm;
+
+        // Unity Quaternion is (x, y, z, w); Horn's convention is (w, x, y, z).
+        return (centroid, new Quaternion(qx * invQ, qy * invQ, qz * invQ, qw * invQ));
+    }
+
+    /// <summary>
+    /// In-place Jacobi diagonalization of a 4x4 real symmetric matrix. After
+    /// convergence, A is diagonal (eigenvalues on the diagonal) and V holds
+    /// the orthonormal eigenvectors as columns. ~30 sweeps is enough headroom
+    /// for full convergence on Horn's N matrix from a 5-point Procrustes set.
+    /// </summary>
+    private static void JacobiEigen4x4(float[,] A, float[,] V)
+    {
+        const int maxSweeps = 30;
+        const float eps = 1e-9f;
+
+        for (int sweep = 0; sweep < maxSweeps; sweep++)
+        {
+            // Pick the largest off-diagonal entry to zero this sweep.
+            int p = 0, q = 1;
+            float maxOff = Mathf.Abs(A[0, 1]);
+            for (int i = 0; i < 4; i++)
+            {
+                for (int j = i + 1; j < 4; j++)
+                {
+                    float a = Mathf.Abs(A[i, j]);
+                    if (a > maxOff) { maxOff = a; p = i; q = j; }
+                }
+            }
+            if (maxOff < eps) break;
+
+            float app = A[p, p];
+            float aqq = A[q, q];
+            float apq = A[p, q];
+
+            // Standard Jacobi rotation angle: tan(2θ) = 2·Apq / (Aqq − App).
+            float theta = (aqq - app) / (2f * apq);
+            float t = (theta >= 0f)
+                ? 1f / (theta + Mathf.Sqrt(1f + theta * theta))
+                : 1f / (theta - Mathf.Sqrt(1f + theta * theta));
+            float ct = 1f / Mathf.Sqrt(1f + t * t);
+            float st = t * ct;
+
+            // Update A in place.
+            A[p, p] = app - t * apq;
+            A[q, q] = aqq + t * apq;
+            A[p, q] = 0f; A[q, p] = 0f;
+            for (int i = 0; i < 4; i++)
+            {
+                if (i == p || i == q) continue;
+                float aip = A[i, p];
+                float aiq = A[i, q];
+                A[i, p] = ct * aip - st * aiq; A[p, i] = A[i, p];
+                A[i, q] = st * aip + ct * aiq; A[q, i] = A[i, q];
+            }
+
+            // Accumulate the rotation in V (eigenvectors as columns).
+            for (int i = 0; i < 4; i++)
+            {
+                float vip = V[i, p];
+                float viq = V[i, q];
+                V[i, p] = ct * vip - st * viq;
+                V[i, q] = st * vip + ct * viq;
+            }
+        }
+    }
+
+    // Levenberg-Marquardt refinement of a 6-DOF tag pose minimizing the per-eye
+    // pixel reprojection error of the rigid 4-corner template. Parametrization:
+    // 3 position deltas + 3 axis-angle tangent-space rotation deltas; after each
+    // accepted step the rotation update is "frozen" into the current quaternion
+    // (right-multiply: R ← exp(δω) · R) and δω resets to 0. The numerical
+    // Jacobian uses forward differences with eps_t = 1e-4 m and eps_r = 1e-4 rad.
+    //
+    // Initial guess comes from PoseFromCornersKabsch on the triangulated corners.
+    // 16 residuals (4 corners × 2 cameras × 2 image axes) vs 6 unknowns is the
+    // strongest constraint of the five solver modes.
+    private (Vector3 pos, Quaternion rot) StereoPnPRefine(
+        Vector3 initialPos, Quaternion initialRot,
+        Vector2[] leftPixels, Vector2[] rightPixels,
+        ScaledIntrinsics leftIntr, ScaledIntrinsics rightIntr,
+        Pose leftCam, Pose rightCam,
+        float tagSize,
+        int maxIters = 20)
+    {
+        if (tagSize <= 0f) return (initialPos, initialRot);
+
+        // Local template at known size (matches the corner ordering used elsewhere).
+        float h = tagSize * 0.5f;
+        _pnpLocalCorners[0] = new Vector3(-h, -h, 0f);
+        _pnpLocalCorners[1] = new Vector3(+h, -h, 0f);
+        _pnpLocalCorners[2] = new Vector3(+h, +h, 0f);
+        _pnpLocalCorners[3] = new Vector3(-h, +h, 0f);
+
+        var leftWorldToCam = Quaternion.Inverse(leftCam.rotation);
+        var rightWorldToCam = Quaternion.Inverse(rightCam.rotation);
+
+        Vector3 t = initialPos;
+        Quaternion R = initialRot;
+
+        const float epsT = 1e-4f;
+        const float epsR = 1e-4f;
+        float lambda = 1e-3f;
+
+        float prevCost = ComputeReprojResiduals(
+            t, R, _pnpLocalCorners,
+            leftPixels, rightPixels,
+            leftIntr, rightIntr,
+            leftCam, rightCam,
+            leftWorldToCam, rightWorldToCam,
+            _pnpResiduals);
+
+        for (int iter = 0; iter < maxIters; iter++)
+        {
+            // Jacobian columns 0..2: position deltas.
+            for (int k = 0; k < 3; k++)
+            {
+                Vector3 tPert = t;
+                tPert[k] += epsT;
+                ComputeReprojResiduals(
+                    tPert, R, _pnpLocalCorners,
+                    leftPixels, rightPixels,
+                    leftIntr, rightIntr,
+                    leftCam, rightCam,
+                    leftWorldToCam, rightWorldToCam,
+                    _pnpResidualsTrial);
+                for (int r = 0; r < 16; r++)
+                {
+                    _pnpJacobian[r, k] = (_pnpResidualsTrial[r] - _pnpResiduals[r]) / epsT;
+                }
+            }
+
+            // Jacobian columns 3..5: tangent-space rotation deltas (axis-angle).
+            for (int k = 0; k < 3; k++)
+            {
+                Vector3 axis = Vector3.zero;
+                axis[k] = 1f;
+                var dR = Quaternion.AngleAxis(epsR * Mathf.Rad2Deg, axis);
+                var rPert = dR * R;
+                ComputeReprojResiduals(
+                    t, rPert, _pnpLocalCorners,
+                    leftPixels, rightPixels,
+                    leftIntr, rightIntr,
+                    leftCam, rightCam,
+                    leftWorldToCam, rightWorldToCam,
+                    _pnpResidualsTrial);
+                for (int r = 0; r < 16; r++)
+                {
+                    _pnpJacobian[r, k + 3] = (_pnpResidualsTrial[r] - _pnpResiduals[r]) / epsR;
+                }
+            }
+
+            // Build H = JᵀJ and g = Jᵀr.
+            for (int i = 0; i < 6; i++)
+            {
+                for (int j = i; j < 6; j++)
+                {
+                    float s = 0f;
+                    for (int r = 0; r < 16; r++) s += _pnpJacobian[r, i] * _pnpJacobian[r, j];
+                    _pnpHessian[i, j] = s;
+                    _pnpHessian[j, i] = s;
+                }
+                float gi = 0f;
+                for (int r = 0; r < 16; r++) gi += _pnpJacobian[r, i] * _pnpResiduals[r];
+                _pnpGradient[i] = gi;
+            }
+
+            // Marquardt damping: scale diagonal by (1 + λ).
+            for (int i = 0; i < 6; i++) _pnpHessian[i, i] *= (1f + lambda);
+
+            // Solve H δ = −g via Gauss-Jordan.
+            if (!SolveLinear6x6(_pnpHessian, _pnpGradient, _pnpAugmented, out var dt0, out var dt1, out var dt2,
+                                                                              out var dr0, out var dr1, out var dr2))
+            {
+                break; // singular — give up with the best estimate so far
+            }
+
+            var tNew = new Vector3(t.x + dt0, t.y + dt1, t.z + dt2);
+            Vector3 omega = new Vector3(dr0, dr1, dr2);
+            float omegaMag = omega.magnitude;
+            Quaternion rNew = (omegaMag < 1e-9f)
+                ? R
+                : Quaternion.AngleAxis(omegaMag * Mathf.Rad2Deg, omega / omegaMag) * R;
+
+            float newCost = ComputeReprojResiduals(
+                tNew, rNew, _pnpLocalCorners,
+                leftPixels, rightPixels,
+                leftIntr, rightIntr,
+                leftCam, rightCam,
+                leftWorldToCam, rightWorldToCam,
+                _pnpResidualsTrial);
+
+            if (newCost < prevCost)
+            {
+                t = tNew;
+                R = rNew;
+                Buffer.BlockCopy(_pnpResidualsTrial, 0, _pnpResiduals, 0, 16 * sizeof(float));
+                lambda *= 0.5f;
+                if ((prevCost - newCost) / Mathf.Max(prevCost, 1e-9f) < 1e-6f) break;
+                prevCost = newCost;
+            }
+            else
+            {
+                lambda *= 4f;
+                if (lambda > 1e6f) break;
+            }
+        }
+
+        return (t, R);
+    }
+
+    /// <summary>
+    /// Projects the rigid template at (t, R) into both cameras and writes
+    /// 16 pixel residuals (4 corners × 2 eyes × 2 axes). Returns the L2 cost.
+    /// Y is flipped between Unity (+Y up) and OpenCV (+Y down) — same convention
+    /// as PixelToWorldDirection so the forward and inverse projections are
+    /// consistent.
+    /// </summary>
+    private static float ComputeReprojResiduals(
+        Vector3 t, Quaternion R, Vector3[] localCorners,
+        Vector2[] leftPixels, Vector2[] rightPixels,
+        ScaledIntrinsics leftIntr, ScaledIntrinsics rightIntr,
+        Pose leftCam, Pose rightCam,
+        Quaternion leftWorldToCam, Quaternion rightWorldToCam,
+        float[] residuals)
+    {
+        float cost = 0f;
+        for (int i = 0; i < 4; i++)
+        {
+            var worldP = t + R * localCorners[i];
+            int o = i * 4;
+
+            // Left eye.
+            var leftLocal = leftWorldToCam * (worldP - leftCam.position);
+            float leftY = -leftLocal.y;
+            if (leftLocal.z > 1e-6f)
+            {
+                float u = leftIntr.fx * leftLocal.x / leftLocal.z + leftIntr.cx;
+                float v = leftIntr.fy * leftY / leftLocal.z + leftIntr.cy;
+                residuals[o + 0] = u - leftPixels[i].x;
+                residuals[o + 1] = v - leftPixels[i].y;
+            }
+            else
+            {
+                residuals[o + 0] = 0f;
+                residuals[o + 1] = 0f;
+            }
+
+            // Right eye.
+            var rightLocal = rightWorldToCam * (worldP - rightCam.position);
+            float rightY = -rightLocal.y;
+            if (rightLocal.z > 1e-6f)
+            {
+                float u = rightIntr.fx * rightLocal.x / rightLocal.z + rightIntr.cx;
+                float v = rightIntr.fy * rightY / rightLocal.z + rightIntr.cy;
+                residuals[o + 2] = u - rightPixels[i].x;
+                residuals[o + 3] = v - rightPixels[i].y;
+            }
+            else
+            {
+                residuals[o + 2] = 0f;
+                residuals[o + 3] = 0f;
+            }
+
+            cost += residuals[o] * residuals[o]
+                 + residuals[o + 1] * residuals[o + 1]
+                 + residuals[o + 2] * residuals[o + 2]
+                 + residuals[o + 3] * residuals[o + 3];
+        }
+        return cost;
+    }
+
+    /// <summary>
+    /// Gauss-Jordan elimination with partial pivoting on a 6x6 system. Solves
+    /// H δ = −g in place via the caller-supplied 6x7 augmented matrix scratch.
+    /// Returns false if H is singular (pivot below 1e-12). Output split into 6
+    /// scalars to avoid allocating a result array.
+    /// </summary>
+    private static bool SolveLinear6x6(
+        float[,] H, float[] g, float[,] aug,
+        out float x0, out float x1, out float x2, out float x3, out float x4, out float x5)
+    {
+        x0 = x1 = x2 = x3 = x4 = x5 = 0f;
+
+        for (int i = 0; i < 6; i++)
+        {
+            for (int j = 0; j < 6; j++) aug[i, j] = H[i, j];
+            aug[i, 6] = -g[i];
+        }
+
+        for (int col = 0; col < 6; col++)
+        {
+            int piv = col;
+            float pivAbs = Mathf.Abs(aug[col, col]);
+            for (int r = col + 1; r < 6; r++)
+            {
+                float a = Mathf.Abs(aug[r, col]);
+                if (a > pivAbs) { pivAbs = a; piv = r; }
+            }
+            if (pivAbs < 1e-12f) return false;
+
+            if (piv != col)
+            {
+                for (int j = 0; j < 7; j++)
+                {
+                    (aug[col, j], aug[piv, j]) = (aug[piv, j], aug[col, j]);
+                }
+            }
+
+            float d = aug[col, col];
+            for (int j = 0; j < 7; j++) aug[col, j] /= d;
+
+            for (int r = 0; r < 6; r++)
+            {
+                if (r == col) continue;
+                float f = aug[r, col];
+                if (Mathf.Abs(f) < 1e-15f) continue;
+                for (int j = 0; j < 7; j++) aug[r, j] -= f * aug[col, j];
+            }
+        }
+
+        x0 = aug[0, 6];
+        x1 = aug[1, 6];
+        x2 = aug[2, 6];
+        x3 = aug[3, 6];
+        x4 = aug[4, 6];
+        x5 = aug[5, 6];
+        return true;
+    }
 
     private static ScaledIntrinsics ScaleIntrinsics(
         PassthroughCameraAccess.CameraIntrinsics intr, Vector2Int currentRes, int targetW, int targetH)

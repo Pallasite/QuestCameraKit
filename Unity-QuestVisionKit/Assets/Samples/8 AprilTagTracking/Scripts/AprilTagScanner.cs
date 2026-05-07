@@ -28,6 +28,17 @@ public class AprilTagResult
     // Detection corners). Populated by stereo scanners; consumers like
     // multi-tag plane fitters or calibration averagers operate on these.
     public Vector3[] observedCorners;
+
+    // Diagnostics for the solver-comparison experiment. Populated by stereo
+    // scanners; the monocular path leaves them at default (NaiveCross / 0).
+    // solverUsed records which RotationSolver mode produced this result.
+    // cornerResidualMeters is the RMS distance between observedCorners and
+    // the rigid template (size = tagSize) at the fitted pose — a uniform
+    // accuracy proxy across all five solver modes (the StereoPnP cost is
+    // reported in pixels internally, so this corner-space residual keeps
+    // the metric comparable to the closed-form solvers).
+    public StereoAprilTagScanner.RotationSolver solverUsed;
+    public float cornerResidualMeters;
 }
 
 /// <summary>

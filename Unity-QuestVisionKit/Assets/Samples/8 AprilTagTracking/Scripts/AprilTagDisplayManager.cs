@@ -36,6 +36,14 @@ public class AprilTagDisplayManager : MonoBehaviour
         public Vector3 Position;
         public Quaternion Rotation;
         public float SizeMeters;
+
+        // Diagnostics for the solver-comparison experiment. SolverUsed records
+        // which RotationSolver mode produced this pose; CornerResidualMeters is
+        // the RMS distance between the observed corners and the rigid template
+        // at the fitted pose. Both default to (NaiveCross, 0) for monocular
+        // scanners that don't populate the AprilTagResult diagnostics.
+        public StereoAprilTagScanner.RotationSolver SolverUsed;
+        public float CornerResidualMeters;
     }
 
     [SerializeField] private PlacementMode placementMode = PlacementMode.Direct;
@@ -134,7 +142,9 @@ public class AprilTagDisplayManager : MonoBehaviour
                 TagId = result.tagId,
                 Position = worldPos,
                 Rotation = worldRot,
-                SizeMeters = MeasureTagSize(result.observedCorners)
+                SizeMeters = MeasureTagSize(result.observedCorners),
+                SolverUsed = result.solverUsed,
+                CornerResidualMeters = result.cornerResidualMeters,
             });
 
             var marker = GetOrCreateMarker(result.tagId);
