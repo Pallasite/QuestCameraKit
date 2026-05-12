@@ -18,7 +18,7 @@ public class TrialDiagnosticsHUD : MonoBehaviour
 
     [Header("Display")]
     [Tooltip("TMP text components to update. Wire via Inspector.")]
-    [SerializeField] private TextMeshPro[] trialDisplayTexts;
+    [SerializeField] private TMP_Text[] trialDisplayTexts;
 
     [Tooltip("Poll interval in seconds.")]
     [SerializeField] private float pollInterval = 0.25f;
