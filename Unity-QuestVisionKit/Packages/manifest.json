@@ -1,5 +1,7 @@
 {
   "dependencies": {
+    "com.ivanmurzak.unity.mcp": "0.72.0",
+    "com.ivanmurzak.unity.mcp.probuilder": "1.0.72",
     "com.meta.xr.mrutilitykit": "83.0.4",
     "com.meta.xr.sdk.core": "83.0.4",
     "com.unity.ai.inference": "2.3.0",
@@ -45,9 +47,7 @@
     "com.unity.modules.video": "1.0.0",
     "com.unity.modules.vr": "1.0.0",
     "com.unity.modules.wind": "1.0.0",
-    "com.unity.modules.xr": "1.0.0",
-    "com.ivanmurzak.unity.mcp": "0.69.0",
-    "com.ivanmurzak.unity.mcp.probuilder": "1.0.72"
+    "com.unity.modules.xr": "1.0.0"
   },
   "scopedRegistries": [
     {
