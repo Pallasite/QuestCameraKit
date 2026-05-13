@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(unity-mcp-cli run-tool *)",
+      "Bash(npx unity-mcp-cli *)",
+      "PowerShell(npx unity-mcp-cli run-tool assets-refresh --input '{}' 2>&1)",
+      "PowerShell(Get-Command unity-mcp-cli, npx, npm -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Command dotnet, csc -ErrorAction SilentlyContinue)"
+    ]
+  }
+}
