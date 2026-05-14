@@ -52,8 +52,11 @@ public class ConstellationDriftCorrector : MonoBehaviour
     [SerializeField] private int minTagsForCalibration = 3;
 
     [Header("Batch calibration (Calibrate / ScanCalibrationAsync)")]
-    [Tooltip("Number of frame pairs to capture during batch calibration (passed to ScanCalibrationAsync).")]
-    [SerializeField] private int calibrationFrameCount = 16;
+    [Tooltip("Number of frame pairs to capture during batch calibration (passed to ScanCalibrationAsync, " +
+             "which overrides the scanner's own default). Default 8 matches the scanner's tuned default and " +
+             "halves capture time vs. the previous 16. Variance scales as 1/sqrt(N), so 8 vs. 16 is only ~1.4x " +
+             "more noise.")]
+    [SerializeField] private int calibrationFrameCount = 8;
 
     [Tooltip("Auto-trigger Calibrate() once enough tags have been visible for several consecutive batches. " +
              "Off in production; useful for in-Editor testing without the UI panel.")]

@@ -23,10 +23,12 @@ using UnityEngine;
 ///   R thumbstick Y  → nudge local +Y / -Y    (up / down)
 ///   R thumbstick X  → rotate local Y axis    (yaw +/-)
 ///   Left HandTrigger held = fine mode (mm / 0.1°), released = coarse (cm / 1°)
-///   A (right)  → reset position offset to zero
-///   B (right)  → reset rotation offset to identity
-///   X + Y both held (left) → reset everything
-///   Right HandTrigger held + A → (re)calibrate constellation
+///   A (right) alone  → reset position offset to zero
+///   B (right) alone  → reset rotation offset to identity
+///   Both HandTriggers held + A → reset everything (replaces the old X+Y chord)
+///   Right HandTrigger + A → batch calibrate constellation (one-shot ScanCalibrationAsync)
+///   Right HandTrigger + B → toggle streaming calibration sweep (Begin if idle, Commit if sweeping)
+///   Right HandTrigger + R thumbstick click → cancel an in-progress streaming sweep
 /// </summary>
 public class ObstacleFinesseController : MonoBehaviour
 {
@@ -134,25 +136,45 @@ public class ObstacleFinesseController : MonoBehaviour
     {
         if (!input) return;
 
-        // Calibrate chord first — must work even before an obstacle exists.
+        var leftGrip = input.IsHeld(OVRInput.Button.PrimaryHandTrigger);
         var rightGrip = input.IsHeld(OVRInput.Button.SecondaryHandTrigger);
-        if (rightGrip && input.WasPressedThisFrame(OVRInput.Button.One))
+        var aPressed = input.WasPressedThisFrame(OVRInput.Button.One);
+        var bPressed = input.WasPressedThisFrame(OVRInput.Button.Two);
+
+        // Resolution order matters — earlier branches must win over later ones
+        // that share a button.
+
+        // 1. Both grips + A → reset all (wins over right-grip+A → calibrate)
+        if (leftGrip && rightGrip && aPressed)
+        {
+            var t = Target;
+            if (t) ResetAll(t);
+            return;
+        }
+
+        // 2. Calibration chords — must work before an obstacle exists.
+        if (rightGrip && aPressed)
         {
             TriggerCalibrate();
             return;
         }
+        if (rightGrip && bPressed)
+        {
+            TriggerStreamingToggle();
+            return;
+        }
+        if (rightGrip && input.WasPressedThisFrame(OVRInput.Button.SecondaryThumbstick))
+        {
+            TriggerStreamingCancel();
+            return;
+        }
 
+        // 3. Per-axis resets (no grip modifier).
         var target = Target;
         if (!target) return;
 
-        // Resets — A is gated on right-grip-released so it doesn't double as calibrate.
-        if (!rightGrip && input.WasPressedThisFrame(OVRInput.Button.One)) ResetPosition(target);
-        if (input.WasPressedThisFrame(OVRInput.Button.Two)) ResetRotation(target);
-        if (input.IsHeld(OVRInput.Button.Three) && input.IsHeld(OVRInput.Button.Four)
-            && (input.WasPressedThisFrame(OVRInput.Button.Three) || input.WasPressedThisFrame(OVRInput.Button.Four)))
-        {
-            ResetAll(target);
-        }
+        if (!rightGrip && aPressed) ResetPosition(target);
+        if (!rightGrip && bPressed) ResetRotation(target);
     }
 
     private void HandleStickFire(QuestControllerInput.StickAxis axis, int sign)
@@ -195,6 +217,56 @@ public class ObstacleFinesseController : MonoBehaviour
         Pulse(OVRInput.Controller.LTouch);
         Pulse(OVRInput.Controller.RTouch);
         _ = corrector.Calibrate();
+    }
+
+    /// <summary>
+    /// Right-grip + B chord: if no streaming session is active, begin one
+    /// (the experimenter then sweeps the headset across the tag layout). If a
+    /// session is already active, commit it. Success/failure is surfaced
+    /// through the corrector's existing OnConstellationCalibrated /
+    /// OnCalibrationFailed events, which this component already subscribes to
+    /// for haptic feedback.
+    /// </summary>
+    public void TriggerStreamingToggle()
+    {
+        if (!corrector)
+        {
+            Debug.LogWarning("[FinesseController] Streaming toggle chord pressed but no ConstellationDriftCorrector assigned.");
+            return;
+        }
+        if (corrector.IsStreamingCalibration)
+        {
+            Debug.Log("[FinesseController] Streaming chord -> CommitStreamingCalibration()");
+            Pulse(OVRInput.Controller.LTouch);
+            Pulse(OVRInput.Controller.RTouch);
+            corrector.CommitStreamingCalibration();
+        }
+        else
+        {
+            Debug.Log("[FinesseController] Streaming chord -> BeginStreamingCalibration()");
+            Pulse(OVRInput.Controller.RTouch);
+            corrector.BeginStreamingCalibration();
+        }
+    }
+
+    /// <summary>
+    /// Right-grip + R thumbstick click chord: cancel an in-progress streaming
+    /// sweep. No-op if no session is active. Longer haptic pulse than
+    /// begin/commit so the gesture feels distinct.
+    /// </summary>
+    public void TriggerStreamingCancel()
+    {
+        if (!corrector) return;
+        if (!corrector.IsStreamingCalibration) return; // no-op when idle
+        Debug.Log("[FinesseController] Cancel chord -> CancelStreamingCalibration()");
+        // Longer-than-default pulse to mark cancel as distinct from begin/commit.
+        if (hapticOnNudge)
+        {
+            OVRInput.SetControllerVibration(1f, hapticAmplitude * 0.8f, OVRInput.Controller.RTouch);
+            CancelInvoke(nameof(StopHaptics));
+            Invoke(nameof(StopHaptics), 0.2f);
+        }
+        corrector.CancelStreamingCalibration();
     }
 
     private void NudgeLocal(Transform t, Vector3 deltaLocal, string label, OVRInput.Controller pulseOn)
