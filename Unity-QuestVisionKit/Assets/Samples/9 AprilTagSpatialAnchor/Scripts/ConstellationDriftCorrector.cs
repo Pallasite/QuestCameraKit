@@ -158,6 +158,38 @@ public class ConstellationDriftCorrector : MonoBehaviour
     /// </summary>
     public IReadOnlyDictionary<int, int> StreamingObservationsPerTag => _streamingObservationCounts;
 
+    /// <summary>
+    /// Lookup helper for visualizers/UIs that want a single tag's accumulated
+    /// observation count during the active streaming session. Returns 0 when
+    /// no session is active or the tag hasn't been seen yet.
+    /// </summary>
+    public int GetStreamingObservationCount(int tagId)
+    {
+        if (!_isStreamingCalibration) return 0;
+        return _streamingObservationCounts.TryGetValue(tagId, out var n) ? n : 0;
+    }
+
+    /// <summary>
+    /// True when the supplied world-space camera position is within
+    /// <paramref name="meters"/> of any calibrated reference tag's current
+    /// world position (anchor-projected). Used by AprilTagDisplayManager to
+    /// gate the per-frame scan loop and skip the heavy detection work when
+    /// no tag is plausibly visible. Returns true (don't gate) when no
+    /// calibration exists yet — pre-calibration we have no reference to
+    /// gate against.
+    /// </summary>
+    public bool IsCameraWithinScanRange(Vector3 cameraWorld, float meters)
+    {
+        if (!IsCalibrated || _anchorTransform == null) return true;
+        float sqThr = meters * meters;
+        foreach (var kv in _referenceLocal)
+        {
+            var w = _anchorTransform.TransformPoint(kv.Value.position);
+            if ((w - cameraWorld).sqrMagnitude <= sqThr) return true;
+        }
+        return false;
+    }
+
     public event Action OnConstellationCalibrated;
     public event Action<string> OnCalibrationFailed;
     /// <summary>Fired during batch calibration capture: (capturedFrames, totalFrames, uniqueTags).</summary>
