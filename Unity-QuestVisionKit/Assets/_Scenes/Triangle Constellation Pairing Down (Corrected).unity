@@ -4696,6 +4696,8 @@ MonoBehaviour:
   calibrationFrameCount: 16
   autoCalibrate: 1
   autoCalibrateConsistentFrames: 5
+  streamingMinObservationsPerTag: 10
+  streamingMaxDurationSeconds: 60
   ransacInlierThresholdMeters: 0.005
   ransacIterations: 32
   rotationGateDegrees: 10
