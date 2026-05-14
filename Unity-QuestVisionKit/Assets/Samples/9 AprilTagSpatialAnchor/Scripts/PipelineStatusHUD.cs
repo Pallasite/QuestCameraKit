@@ -39,6 +39,12 @@ public class PipelineStatusHUD : MonoBehaviour
     private int _calProgressTags;
     private bool _calInProgress;
 
+    // Streaming progress state (written from event, read from Refresh).
+    // IsStreamingCalibration on the corrector is the source of truth for whether
+    // a sweep is active; these fields just cache the most recent progress numbers.
+    private int _streamingTotalObs;
+    private int _streamingUniqueTags;
+
     private void Awake()
     {
         if (!corrector) corrector = FindAnyObjectByType<ConstellationDriftCorrector>(FindObjectsInactive.Include);
@@ -50,6 +56,7 @@ public class PipelineStatusHUD : MonoBehaviour
         if (corrector)
         {
             corrector.OnCalibrationProgress += HandleCalibrationProgress;
+            corrector.OnStreamingCalibrationProgress += HandleStreamingProgress;
             corrector.OnConstellationCalibrated += HandleCalibrated;
             corrector.OnCalibrationFailed += HandleCalibrationFailed;
             corrector.OnCorrectionTriggered += HandleCorrectionTriggered;
@@ -63,6 +70,7 @@ public class PipelineStatusHUD : MonoBehaviour
         if (corrector)
         {
             corrector.OnCalibrationProgress -= HandleCalibrationProgress;
+            corrector.OnStreamingCalibrationProgress -= HandleStreamingProgress;
             corrector.OnConstellationCalibrated -= HandleCalibrated;
             corrector.OnCalibrationFailed -= HandleCalibrationFailed;
             corrector.OnCorrectionTriggered -= HandleCorrectionTriggered;
@@ -85,7 +93,15 @@ public class PipelineStatusHUD : MonoBehaviour
         _sb.Clear();
 
         // --- Calibration state ---
-        if (_calInProgress)
+        // Order: streaming sweep wins (it's the most user-visible mode),
+        // then batch in-progress, then steady calibrated, else uncalibrated hint.
+        if (corrector && corrector.IsStreamingCalibration)
+        {
+            _sb.AppendFormat("<b>Sweeping...</b> {0} tags / {1} obs ({2:F1}s)",
+                _streamingUniqueTags, _streamingTotalObs, corrector.StreamingElapsedSeconds);
+            _sb.Append("\ngrip+B commit \u00b7 grip+stick-click cancel\n");
+        }
+        else if (_calInProgress)
         {
             _sb.AppendFormat("<b>Calibrating...</b> {0}/{1} frames", _calProgressFrame, _calProgressTotal);
             if (_calProgressTags > 0) _sb.AppendFormat(" ({0} tags)", _calProgressTags);
@@ -100,7 +116,7 @@ public class PipelineStatusHUD : MonoBehaviour
         }
         else
         {
-            _sb.Append("<b>Uncalibrated</b> \u2014 grip+A to calibrate\n");
+            _sb.Append("<b>Uncalibrated</b> \u2014 grip+A batch \u00b7 grip+B sweep\n");
         }
 
         // --- Drift correction state ---
@@ -150,6 +166,12 @@ public class PipelineStatusHUD : MonoBehaviour
         _calProgressFrame = captured;
         _calProgressTotal = total;
         _calProgressTags = tags;
+    }
+
+    private void HandleStreamingProgress(int totalObs, int uniqueTags)
+    {
+        _streamingTotalObs = totalObs;
+        _streamingUniqueTags = uniqueTags;
     }
 
     private void HandleCalibrated()
