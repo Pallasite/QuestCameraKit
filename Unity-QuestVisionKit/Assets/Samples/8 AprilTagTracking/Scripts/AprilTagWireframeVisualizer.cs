@@ -36,10 +36,17 @@ public class AprilTagWireframeVisualizer : MonoBehaviour
              "(e.g. Unlit/Color set to bright green) for best visibility.")]
     [SerializeField] private Material wireframeMaterial;
 
-    [Tooltip("Fallback tag size in meters, used only when no measured size is provided " +
-             "(e.g. the monocular AprilTagScanner). The StereoAprilTagScanner triangulates " +
-             "the size per detection and that value overrides this one.")]
-    [SerializeField] private float tagSizeMeters = 0.1f;
+    [Tooltip("Known physical tag edge length in meters. This is the 'prior' — what you measured with " +
+             "calipers and printed on. Used as the authoritative size for wireframe scaling instead of " +
+             "the per-frame triangulated size (which jitters with stereo noise frame-to-frame). When a " +
+             "sizeSource scanner is assigned/found, ITS tagSizeMeters wins so you only have to keep one " +
+             "Inspector field in sync; this local field is the fallback.")]
+    [SerializeField] private float tagSizeMeters = 0.171f;
+
+    [Tooltip("Optional StereoAprilTagScanner used as the authoritative source for tagSizeMeters. " +
+             "Auto-resolved from the same GameObject if left null. Keeps the visualizer in sync with " +
+             "whatever size the scanner is configured for (one Inspector field, one source of truth).")]
+    [SerializeField] private StereoAprilTagScanner sizeSource;
 
     [Header("Visibility gating")]
     [Tooltip("Optional ConstellationDriftCorrector reference. Auto-resolved from the same GameObject " +
@@ -83,10 +90,11 @@ public class AprilTagWireframeVisualizer : MonoBehaviour
 
     private void Awake()
     {
-        // Auto-resolve the corrector from the same GameObject when not wired
-        // explicitly. Matches the AprilTag stack's typical layout so the
-        // visibility modes work zero-touch.
+        // Auto-resolve sibling components from the same GameObject when not
+        // wired explicitly. Matches the AprilTag stack's typical layout so the
+        // visibility modes + size source work zero-touch.
         if (!corrector) corrector = GetComponent<ConstellationDriftCorrector>();
+        if (!sizeSource) sizeSource = GetComponent<StereoAprilTagScanner>();
     }
 
     private void OnEnable()
@@ -140,9 +148,15 @@ public class AprilTagWireframeVisualizer : MonoBehaviour
 
         if (!ShouldDrawThisFrame()) return;
 
+        // Single tag-size source for the whole frame. We deliberately ignore
+        // pose.SizeMeters (the per-frame triangulated estimate) — the Inspector
+        // value is the known physical prior and using the noisy estimate makes
+        // the wireframe wiggle in size frame-to-frame for no good reason.
+        var size = sizeSource != null ? sizeSource.TagSizeMeters : tagSizeMeters;
+        if (size <= 0f) size = tagSizeMeters; // last-ditch fallback if the scanner field is zero/unset
+
         foreach (var pose in _latestPoses)
         {
-            var size = pose.SizeMeters > 0f ? pose.SizeMeters : tagSizeMeters;
             if (colorByQuality && _propertyBlock != null)
             {
                 var color = ComputeColor(pose);
