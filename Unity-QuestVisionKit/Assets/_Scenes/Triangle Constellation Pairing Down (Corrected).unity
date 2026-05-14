@@ -4634,7 +4634,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AprilTagWireframeVisualizer
   wireframeMaterial: {fileID: 2100000, guid: 007914e691e51ed41a4b0269a6ab175f, type: 2}
-  tagSizeMeters: 0.171
+  tagSizeMeters: 0.097
 --- !u!114 &665711660
 MonoBehaviour:
   m_ObjectHideFlags: 0
