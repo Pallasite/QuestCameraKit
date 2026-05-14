@@ -19,16 +19,20 @@ using UnityEngine;
 /// per-tag anchor diagnostics, and both subscribe independently to
 /// AprilTagDisplayManager.OnTagsDetected.
 ///
-/// Lifecycle:
-///   1. Idle until Calibrate() is called (UI panel) or auto-calibrate fires.
-///   2. Calibrate() captures via StereoAprilTagScanner.ScanCalibrationAsync,
-///      requires >= minTagsForCalibration tags, creates the anchor at the
-///      constellation centroid, parents CorrectionRoot under it, and either
-///      reparents an existing obstacle (preserving its local pose) or
-///      instantiates a fresh prefab.
-///   3. Steady state: each detection batch produces a candidate correction;
-///      after N consistent candidates and a magnitude check, the correction
-///      is lerped onto CorrectionRoot.
+/// Two calibration modes:
+///   1. Batch (Calibrate): one-shot heavy capture via ScanCalibrationAsync.
+///      Requires all tags in a single camera frustum. Good when tags are
+///      clustered and easily seen together.
+///   2. Streaming (BeginStreamingCalibration / CommitStreamingCalibration):
+///      accumulates per-tag observations from the live OnTagsDetected feed
+///      while the experimenter sweeps the headset across the space.
+///      Each tag just needs to be visible at *some* point during the sweep;
+///      it does NOT need to share a frustum with the others. Brisk sweeps
+///      (under ~20s) keep SLAM-frame drift between viewpoints negligible.
+///
+/// Steady state (after either mode commits): each detection batch produces a
+/// candidate correction; after N consistent candidates and a magnitude check,
+/// the correction is lerped onto CorrectionRoot.
 ///
 /// All tuning constants are Inspector-exposed and will need calibration on
 /// device.
@@ -44,10 +48,11 @@ public class ConstellationDriftCorrector : MonoBehaviour
     [Tooltip("Restrict the constellation to these tag IDs. Empty = use any visible tag.")]
     [SerializeField] private int[] allowedTagIds = Array.Empty<int>();
 
-    [Tooltip("Minimum number of distinct tags required in the calibration capture.")]
+    [Tooltip("Minimum number of distinct tags required to commit a calibration (either mode).")]
     [SerializeField] private int minTagsForCalibration = 3;
 
-    [Tooltip("Number of frame pairs to capture during calibration (passed to ScanCalibrationAsync).")]
+    [Header("Batch calibration (Calibrate / ScanCalibrationAsync)")]
+    [Tooltip("Number of frame pairs to capture during batch calibration (passed to ScanCalibrationAsync).")]
     [SerializeField] private int calibrationFrameCount = 16;
 
     [Tooltip("Auto-trigger Calibrate() once enough tags have been visible for several consecutive batches. " +
@@ -55,6 +60,18 @@ public class ConstellationDriftCorrector : MonoBehaviour
     [SerializeField] private bool autoCalibrate = false;
 
     [SerializeField] private int autoCalibrateConsistentFrames = 5;
+
+    [Header("Streaming calibration (BeginStreamingCalibration / CommitStreamingCalibration)")]
+    [Tooltip("Minimum number of per-frame observations a tag must accumulate during the sweep " +
+             "before it qualifies for the constellation. Higher = more averaging = less per-tag noise, " +
+             "but the experimenter must dwell on each tag longer. Default 10 ≈ 1 s of dwell at 10 Hz " +
+             "detection; the median noise floor drops as ~1/√N.")]
+    [SerializeField] private int streamingMinObservationsPerTag = 10;
+
+    [Tooltip("Safety timeout: if a streaming session runs longer than this without being committed " +
+             "or cancelled, it auto-cancels and logs a warning. SLAM-frame drift across long captures " +
+             "degrades the constellation, so prefer short brisk sweeps.")]
+    [SerializeField] private float streamingMaxDurationSeconds = 60f;
 
     [Header("RANSAC + Kabsch")]
     [SerializeField] private float ransacInlierThresholdMeters = 0.005f;
@@ -103,8 +120,15 @@ public class ConstellationDriftCorrector : MonoBehaviour
     private float _cooldownUntil;
     private float _lastDetectionTime;
 
-    private bool _isCalibrating;
+    private bool _isCalibrating;        // batch mode in-flight
     private int _autoCalibrateCounter;
+
+    // Streaming-calibration state
+    private bool _isStreamingCalibration;
+    private float _streamingStartTime;
+    private readonly Dictionary<int, List<Pose>> _streamingObservations = new();
+    // Live count view exposed via StreamingObservationsPerTag.
+    private readonly Dictionary<int, int> _streamingObservationCounts = new();
 
     private System.Random _rng;
 
@@ -122,10 +146,21 @@ public class ConstellationDriftCorrector : MonoBehaviour
     public IReadOnlyDictionary<int, Pose> ReferenceConstellation => _referenceLocal;
     public float LastResidualRmsMeters => _lastResidualRms;
 
+    public bool IsStreamingCalibration => _isStreamingCalibration;
+    public float StreamingElapsedSeconds => _isStreamingCalibration ? Time.time - _streamingStartTime : 0f;
+
+    /// <summary>
+    /// Live per-tag observation counts for the active streaming session.
+    /// Empty between sessions. Use for UI showing "tag 7: 12 obs, tag 8: 3 obs..."
+    /// </summary>
+    public IReadOnlyDictionary<int, int> StreamingObservationsPerTag => _streamingObservationCounts;
+
     public event Action OnConstellationCalibrated;
     public event Action<string> OnCalibrationFailed;
-    /// <summary>Fired during calibration capture: (capturedFrames, totalFrames, uniqueTags).</summary>
+    /// <summary>Fired during batch calibration capture: (capturedFrames, totalFrames, uniqueTags).</summary>
     public event Action<int, int, int> OnCalibrationProgress;
+    /// <summary>Fired each detection batch during a streaming session: (totalObservations, uniqueTags).</summary>
+    public event Action<int, int> OnStreamingCalibrationProgress;
     public event Action<Pose> OnCorrectionTriggered;
     public event Action OnCorrectionCompleted;
     public event Action<string> OnCorrectionRejected;
@@ -169,11 +204,30 @@ public class ConstellationDriftCorrector : MonoBehaviour
         {
             _candidateBuffer.Clear();
         }
+
+        // Streaming session safety timeout. SLAM drift accumulates linearly with
+        // session duration; cap it so a forgotten session doesn't silently produce
+        // a degraded calibration.
+        if (_isStreamingCalibration
+            && Time.time - _streamingStartTime > streamingMaxDurationSeconds)
+        {
+            Debug.LogWarning($"[ConstellationDriftCorrector] Streaming calibration auto-cancelled after {streamingMaxDurationSeconds:F0}s. Re-start the sweep.");
+            CancelStreamingCalibration();
+        }
     }
 
     // ---- public commands ----
-    [ContextMenu("Calibrate Now")]
+    [ContextMenu("Calibrate Now (batch)")]
     private void CalibrateMenu() => _ = Calibrate();
+
+    [ContextMenu("Begin Streaming Calibration")]
+    private void BeginStreamingMenu() => BeginStreamingCalibration();
+
+    [ContextMenu("Commit Streaming Calibration")]
+    private void CommitStreamingMenu() => CommitStreamingCalibration();
+
+    [ContextMenu("Cancel Streaming Calibration")]
+    private void CancelStreamingMenu() => CancelStreamingCalibration();
 
     [ContextMenu("Reset Calibration (destroys obstacle)")]
     public void ResetCalibration()
@@ -192,20 +246,36 @@ public class ConstellationDriftCorrector : MonoBehaviour
         _lerping = false;
         _cooldownUntil = 0f;
         _autoCalibrateCounter = 0;
+
+        _isStreamingCalibration = false;
+        _streamingObservations.Clear();
+        _streamingObservationCounts.Clear();
     }
 
     /// <summary>
-    /// Captures the current AprilTag constellation as the reference frame and
-    /// (re)builds the constellation anchor. On a recalibration, the existing
-    /// obstacle GameObject is preserved across the swap and its local pose
-    /// under CorrectionRoot is restored. On capture failure (too few tags,
-    /// scanner busy), the existing calibration is left untouched.
+    /// Batch calibration. Captures the constellation in one ~1-2 s heavy scan
+    /// via StereoAprilTagScanner.ScanCalibrationAsync, requires all desired tags
+    /// to be in a single camera frustum, and commits the constellation
+    /// synchronously when capture completes.
+    ///
+    /// On a recalibration the existing obstacle GameObject is preserved across
+    /// the swap and its local pose under CorrectionRoot is restored. On capture
+    /// failure (too few tags, scanner busy), the existing calibration is left
+    /// untouched.
+    ///
+    /// Use BeginStreamingCalibration / CommitStreamingCalibration instead if
+    /// tags don't fit in one frustum and the experimenter needs to sweep.
     /// </summary>
     public async Task<bool> Calibrate(CancellationToken ct = default)
     {
         if (_isCalibrating)
         {
             Debug.LogWarning("[ConstellationDriftCorrector] Calibrate() called while another calibration is in progress.");
+            return false;
+        }
+        if (_isStreamingCalibration)
+        {
+            Debug.LogWarning("[ConstellationDriftCorrector] Calibrate() called while streaming calibration is active. Commit or cancel it first.");
             return false;
         }
         _isCalibrating = true;
@@ -246,100 +316,246 @@ public class ConstellationDriftCorrector : MonoBehaviour
             displayManager.enabled = displayManagerWasEnabled;
 
             // Filter to allowed tags with a usable world-space pose.
-            var filtered = new List<AprilTagResult>();
+            var tags = new List<(int tagId, Pose worldPose)>();
             if (capture != null)
             {
                 foreach (var r in capture)
                 {
                     if (!IsAllowed(r.tagId)) continue;
                     if (!r.worldPoseOverride.HasValue) continue;
-                    filtered.Add(r);
+                    tags.Add((r.tagId, r.worldPoseOverride.Value));
                 }
             }
 
-            if (filtered.Count < minTagsForCalibration)
+            if (tags.Count < minTagsForCalibration)
             {
-                var reason = $"Too few tags: captured {filtered.Count}, need {minTagsForCalibration}";
+                var reason = $"Too few tags: captured {tags.Count}, need {minTagsForCalibration}";
                 Debug.LogError($"[ConstellationDriftCorrector] {reason}. Previous calibration (if any) is unchanged.");
                 OnCalibrationFailed?.Invoke(reason);
                 return false;
             }
 
-            // Centroid of the captured constellation, identity rotation.
-            // Anchor orientation is a coordinate convention; per-tag
-            // orientations are carried in the reference data.
-            var centroid = Vector3.zero;
-            foreach (var r in filtered) centroid += r.worldPoseOverride.Value.position;
-            centroid /= filtered.Count;
-
-            // Preserve existing obstacle's local pose (the experimenter's
-            // authored offset) before tearing down the old anchor.
-            GameObject preservedObstacle = null;
-            Vector3 preservedLocalPos = Vector3.zero;
-            Quaternion preservedLocalRot = Quaternion.identity;
-            Vector3 preservedLocalScale = Vector3.one;
-            if (_obstacle && _correctionRoot)
-            {
-                preservedObstacle = _obstacle;
-                preservedLocalPos = preservedObstacle.transform.localPosition;
-                preservedLocalRot = preservedObstacle.transform.localRotation;
-                preservedLocalScale = preservedObstacle.transform.localScale;
-                preservedObstacle.transform.SetParent(null, worldPositionStays: true);
-            }
-
-            if (_anchor) Destroy(_anchor.gameObject);
-            _anchor = null;
-            _anchorTransform = null;
-            _correctionRoot = null;
-            _obstacle = null;
-
-            var anchorGo = new GameObject("ConstellationAnchor");
-            anchorGo.transform.SetPositionAndRotation(centroid, Quaternion.identity);
-            _anchor = anchorGo.AddComponent<OVRSpatialAnchor>();
-            _anchorTransform = anchorGo.transform;
-
-            var rootGo = new GameObject("CorrectionRoot");
-            rootGo.transform.SetParent(anchorGo.transform, worldPositionStays: false);
-            rootGo.transform.localPosition = Vector3.zero;
-            rootGo.transform.localRotation = Quaternion.identity;
-            _correctionRoot = rootGo.transform;
-
-            _referenceLocal.Clear();
-            foreach (var r in filtered)
-            {
-                var w = r.worldPoseOverride.Value;
-                var localPos = anchorGo.transform.InverseTransformPoint(w.position);
-                var localRot = Quaternion.Inverse(anchorGo.transform.rotation) * w.rotation;
-                _referenceLocal[r.tagId] = new Pose(localPos, localRot);
-            }
-
-            if (preservedObstacle)
-            {
-                preservedObstacle.transform.SetParent(_correctionRoot, worldPositionStays: false);
-                preservedObstacle.transform.localPosition = preservedLocalPos;
-                preservedObstacle.transform.localRotation = preservedLocalRot;
-                preservedObstacle.transform.localScale = preservedLocalScale;
-                _obstacle = preservedObstacle;
-            }
-            else if (anchoredObstaclePrefab)
-            {
-                _obstacle = Instantiate(anchoredObstaclePrefab, _correctionRoot);
-            }
-
-            _candidateBuffer.Clear();
-            _appliedCorrection = Pose.identity;
-            _lerping = false;
-            _cooldownUntil = 0f;
-            _lastDetectionTime = Time.time;
-
-            Debug.Log($"[ConstellationDriftCorrector] Calibrated with {filtered.Count} tags at centroid {centroid}.");
-            OnConstellationCalibrated?.Invoke();
+            BuildConstellation(tags, sourceDescription: "batch");
             return true;
         }
         finally
         {
             _isCalibrating = false;
         }
+    }
+
+    /// <summary>
+    /// Begin a streaming calibration session. Subsequent per-frame detections
+    /// accumulate into a per-tag observation buffer. Call
+    /// CommitStreamingCalibration when the experimenter has finished the sweep,
+    /// or CancelStreamingCalibration to discard.
+    ///
+    /// Idempotent: starting while already streaming clears the existing buffer
+    /// and restarts the timer.
+    /// </summary>
+    public void BeginStreamingCalibration()
+    {
+        if (_isCalibrating)
+        {
+            Debug.LogWarning("[ConstellationDriftCorrector] BeginStreamingCalibration() blocked: batch calibration in progress.");
+            return;
+        }
+        _streamingObservations.Clear();
+        _streamingObservationCounts.Clear();
+        _streamingStartTime = Time.time;
+        _isStreamingCalibration = true;
+        if (verboseLogging) Debug.Log("[ConstellationDriftCorrector] Streaming calibration started.");
+    }
+
+    /// <summary>
+    /// Commit the streaming calibration: median-fuses each qualifying tag's
+    /// accumulated observations and builds the constellation. Returns true on
+    /// success, false if too few tags reached <see cref="streamingMinObservationsPerTag"/>
+    /// observations. On failure the existing calibration (if any) is unchanged
+    /// and the streaming buffer is cleared.
+    /// </summary>
+    public bool CommitStreamingCalibration()
+    {
+        if (!_isStreamingCalibration)
+        {
+            Debug.LogWarning("[ConstellationDriftCorrector] CommitStreamingCalibration() called outside a streaming session.");
+            return false;
+        }
+
+        var tags = new List<(int tagId, Pose worldPose)>();
+        foreach (var kv in _streamingObservations)
+        {
+            if (kv.Value.Count >= streamingMinObservationsPerTag)
+            {
+                tags.Add((kv.Key, MedianPose(kv.Value)));
+            }
+        }
+
+        var elapsed = Time.time - _streamingStartTime;
+        var observed = _streamingObservations.Count;
+
+        // Tear down session state regardless of outcome.
+        _streamingObservations.Clear();
+        _streamingObservationCounts.Clear();
+        _isStreamingCalibration = false;
+
+        if (tags.Count < minTagsForCalibration)
+        {
+            var reason = $"Streaming: only {tags.Count} of {observed} observed tags reached " +
+                         $"{streamingMinObservationsPerTag}+ observations (need {minTagsForCalibration} qualifying tags). " +
+                         $"Elapsed {elapsed:F1}s.";
+            Debug.LogError($"[ConstellationDriftCorrector] {reason}. Previous calibration (if any) is unchanged.");
+            OnCalibrationFailed?.Invoke(reason);
+            return false;
+        }
+
+        BuildConstellation(tags, sourceDescription: $"streaming, {elapsed:F1}s sweep");
+        return true;
+    }
+
+    /// <summary>
+    /// Discard the streaming session without committing. Existing calibration
+    /// (if any) is unchanged.
+    /// </summary>
+    public void CancelStreamingCalibration()
+    {
+        if (!_isStreamingCalibration) return;
+        _isStreamingCalibration = false;
+        _streamingObservations.Clear();
+        _streamingObservationCounts.Clear();
+        if (verboseLogging) Debug.Log("[ConstellationDriftCorrector] Streaming calibration cancelled.");
+    }
+
+    /// <summary>
+    /// Common anchor-build path used by both calibration modes. Centroid →
+    /// anchor → CorrectionRoot → reference data in anchor-local space →
+    /// obstacle reparent/instantiate → reset correction state.
+    /// </summary>
+    private void BuildConstellation(IList<(int tagId, Pose worldPose)> tags, string sourceDescription)
+    {
+        // Centroid of the captured constellation, identity rotation.
+        // Anchor orientation is a coordinate convention; per-tag orientations
+        // are carried in the reference data.
+        var centroid = Vector3.zero;
+        for (int i = 0; i < tags.Count; i++) centroid += tags[i].worldPose.position;
+        centroid /= tags.Count;
+
+        // Preserve existing obstacle's local pose (the experimenter's authored
+        // offset) before tearing down the old anchor.
+        GameObject preservedObstacle = null;
+        Vector3 preservedLocalPos = Vector3.zero;
+        Quaternion preservedLocalRot = Quaternion.identity;
+        Vector3 preservedLocalScale = Vector3.one;
+        if (_obstacle && _correctionRoot)
+        {
+            preservedObstacle = _obstacle;
+            preservedLocalPos = preservedObstacle.transform.localPosition;
+            preservedLocalRot = preservedObstacle.transform.localRotation;
+            preservedLocalScale = preservedObstacle.transform.localScale;
+            preservedObstacle.transform.SetParent(null, worldPositionStays: true);
+        }
+
+        if (_anchor) Destroy(_anchor.gameObject);
+        _anchor = null;
+        _anchorTransform = null;
+        _correctionRoot = null;
+        _obstacle = null;
+
+        var anchorGo = new GameObject("ConstellationAnchor");
+        anchorGo.transform.SetPositionAndRotation(centroid, Quaternion.identity);
+        _anchor = anchorGo.AddComponent<OVRSpatialAnchor>();
+        _anchorTransform = anchorGo.transform;
+
+        var rootGo = new GameObject("CorrectionRoot");
+        rootGo.transform.SetParent(anchorGo.transform, worldPositionStays: false);
+        rootGo.transform.localPosition = Vector3.zero;
+        rootGo.transform.localRotation = Quaternion.identity;
+        _correctionRoot = rootGo.transform;
+
+        _referenceLocal.Clear();
+        for (int i = 0; i < tags.Count; i++)
+        {
+            var w = tags[i].worldPose;
+            var localPos = anchorGo.transform.InverseTransformPoint(w.position);
+            var localRot = Quaternion.Inverse(anchorGo.transform.rotation) * w.rotation;
+            _referenceLocal[tags[i].tagId] = new Pose(localPos, localRot);
+        }
+
+        if (preservedObstacle)
+        {
+            preservedObstacle.transform.SetParent(_correctionRoot, worldPositionStays: false);
+            preservedObstacle.transform.localPosition = preservedLocalPos;
+            preservedObstacle.transform.localRotation = preservedLocalRot;
+            preservedObstacle.transform.localScale = preservedLocalScale;
+            _obstacle = preservedObstacle;
+        }
+        else if (anchoredObstaclePrefab)
+        {
+            _obstacle = Instantiate(anchoredObstaclePrefab, _correctionRoot);
+        }
+
+        _candidateBuffer.Clear();
+        _appliedCorrection = Pose.identity;
+        _lerping = false;
+        _cooldownUntil = 0f;
+        _lastDetectionTime = Time.time;
+
+        Debug.Log($"[ConstellationDriftCorrector] Calibrated with {tags.Count} tags at centroid {centroid} ({sourceDescription}).");
+        OnConstellationCalibrated?.Invoke();
+    }
+
+    /// <summary>
+    /// Per-component position median + sign-corrected slerp average for rotation.
+    /// Component-wise median makes position robust to a small number of bad
+    /// observations (motion-blurred frame, edge-of-frustum detection). Rotation
+    /// uses an incremental slerp with quaternion sign-flip handling so a tag
+    /// observed across head poses doesn't average through the long arc.
+    /// </summary>
+    private static Pose MedianPose(IList<Pose> observations)
+    {
+        int n = observations.Count;
+        if (n == 0) return Pose.identity;
+        if (n == 1) return observations[0];
+
+        // Position: component-wise median.
+        var xs = new float[n];
+        var ys = new float[n];
+        var zs = new float[n];
+        for (int i = 0; i < n; i++)
+        {
+            var p = observations[i].position;
+            xs[i] = p.x; ys[i] = p.y; zs[i] = p.z;
+        }
+        Array.Sort(xs); Array.Sort(ys); Array.Sort(zs);
+        int mid = n / 2;
+        Vector3 medPos;
+        if ((n & 1) == 0)
+        {
+            medPos = new Vector3(
+                (xs[mid - 1] + xs[mid]) * 0.5f,
+                (ys[mid - 1] + ys[mid]) * 0.5f,
+                (zs[mid - 1] + zs[mid]) * 0.5f);
+        }
+        else
+        {
+            medPos = new Vector3(xs[mid], ys[mid], zs[mid]);
+        }
+
+        // Rotation: incremental slerp with sign correction. Quaternion q and -q
+        // represent the same rotation; if Dot(acc, q) is negative we must flip
+        // q before slerping or we'll travel the long way around.
+        var acc = observations[0].rotation;
+        for (int i = 1; i < n; i++)
+        {
+            var q = observations[i].rotation;
+            if (Quaternion.Dot(acc, q) < 0f)
+            {
+                q = new Quaternion(-q.x, -q.y, -q.z, -q.w);
+            }
+            acc = Quaternion.Slerp(acc, q, 1f / (i + 1));
+        }
+
+        return new Pose(medPos, acc);
     }
 
     private bool IsAllowed(int tagId)
@@ -355,6 +571,29 @@ public class ConstellationDriftCorrector : MonoBehaviour
     {
         if (poses == null || poses.Length == 0) return;
         _lastDetectionTime = Time.time;
+
+        // Streaming-calibration accumulation. Runs in parallel to whatever else
+        // the corrector would do (if already calibrated, we still apply
+        // corrections from the existing constellation while accumulating new
+        // observations for the next commit — the experimenter can preview the
+        // current state while recalibrating).
+        if (_isStreamingCalibration)
+        {
+            int totalObs = 0;
+            foreach (var p in poses)
+            {
+                if (!IsAllowed(p.TagId)) continue;
+                if (!_streamingObservations.TryGetValue(p.TagId, out var list))
+                {
+                    list = new List<Pose>();
+                    _streamingObservations[p.TagId] = list;
+                }
+                list.Add(new Pose(p.Position, p.Rotation));
+                _streamingObservationCounts[p.TagId] = list.Count;
+            }
+            foreach (var kv in _streamingObservationCounts) totalObs += kv.Value;
+            OnStreamingCalibrationProgress?.Invoke(totalObs, _streamingObservationCounts.Count);
+        }
 
         if (!IsCalibrated)
         {
@@ -479,7 +718,7 @@ public class ConstellationDriftCorrector : MonoBehaviour
 
     private void HandleAutoCalibrate(AprilTagDisplayManager.TagWorldPose[] poses)
     {
-        if (!autoCalibrate || _isCalibrating) return;
+        if (!autoCalibrate || _isCalibrating || _isStreamingCalibration) return;
 
         int allowedCount = 0;
         foreach (var p in poses) if (IsAllowed(p.TagId)) allowedCount++;
@@ -698,6 +937,19 @@ public class ConstellationDriftCorrector : MonoBehaviour
         {
             Gizmos.color = Color.cyan;
             Gizmos.DrawLine(_anchorTransform.position, _correctionRoot.position);
+        }
+
+        // Streaming-session preview: draw the running median of each tag's
+        // observations so the experimenter can see what they've captured so far.
+        if (_isStreamingCalibration && _streamingObservations.Count > 0)
+        {
+            Gizmos.color = new Color(0.4f, 0.8f, 1f);
+            foreach (var kv in _streamingObservations)
+            {
+                if (kv.Value.Count == 0) continue;
+                var med = MedianPose(kv.Value);
+                Gizmos.DrawWireSphere(med.position, 0.025f);
+            }
         }
     }
 }
