@@ -54,6 +54,25 @@ public class AprilTagDisplayManager : MonoBehaviour
     [Tooltip("Explicit marker pool reference. Falls back to MarkerPool.Instance if not set.")]
     [SerializeField] private MarkerPool markerPool;
 
+    [Header("Proximity gate (skip per-frame scan when far from any reference tag)")]
+    [Tooltip("Optional ConstellationDriftCorrector reference used to gate per-frame scans by distance " +
+             "to the calibrated reference tags. Auto-resolved from the same GameObject if left null. " +
+             "When unset and no fallback found, the gate is disabled (always scan, legacy behavior).")]
+    [SerializeField] private ConstellationDriftCorrector proximityGate;
+
+    [Tooltip("Skip the per-frame ScanFrameAsync call when the camera is farther than this from every " +
+             "calibrated reference tag. AprilTag pose error ramps quickly past ~2 m at the configured " +
+             "size; cheap to lower without losing usable detections.")]
+    [SerializeField] private float maxScanDistanceMeters = 2.5f;
+
+    [Tooltip("Hysteresis: once out of range, must come within (max - hysteresis) to re-enable scanning. " +
+             "Prevents the gate from rapidly flickering on/off at the boundary.")]
+    [SerializeField] private float scanDistanceHysteresisMeters = 0.5f;
+
+    [Tooltip("Always scan during a streaming-calibration sweep, regardless of distance. The sweep " +
+             "explicitly wants to see every tag the headset can find, not just nearby ones.")]
+    [SerializeField] private bool gateBypassDuringStreaming = true;
+
     /// <summary>
     /// Fired each frame that tags are detected, after world poses are computed.
     /// Subscribe from additional visualizers (e.g. AprilTagWireframeVisualizer)
@@ -65,11 +84,16 @@ public class AprilTagDisplayManager : MonoBehaviour
 
     private IAprilTagScanner _scanner;
     private EnvironmentRaycastManager _envRaycastManager;
+    private Transform _cameraTransform;
     private readonly Dictionary<int, MarkerController> _activeMarkers = new();
     private readonly List<int> _keysToRemove = new();
     private bool _scanInProgress;
     private int _consecutiveErrors;
     private float _backoffUntil;
+
+    // Proximity gate state. _inScanRange is the latched in/out value; we flip
+    // it lazily based on hysteresis so the gate doesn't flicker at the boundary.
+    private bool _inScanRange = true;
 
     private void Awake()
     {
@@ -82,11 +106,59 @@ public class AprilTagDisplayManager : MonoBehaviour
 
         if (!markerPool) markerPool = MarkerPool.Instance;
         if (!markerPool) Debug.LogWarning("[AprilTagDisplayManager] No MarkerPool assigned and no singleton found. Markers will not spawn.");
+
+        // Auto-resolve the proximity gate from the same GameObject when not
+        // wired explicitly. Matches the AprilTag stack's typical layout
+        // (corrector + display manager on the same GameObject) so the gate
+        // works zero-touch.
+        if (!proximityGate) proximityGate = GetComponent<ConstellationDriftCorrector>();
     }
 
     private void Update()
     {
-        if (!_scanInProgress && Time.time >= _backoffUntil) RefreshMarkers();
+        if (_scanInProgress || Time.time < _backoffUntil) return;
+        if (!ShouldScanThisFrame()) return;
+        RefreshMarkers();
+    }
+
+    /// <summary>
+    /// Proximity-gate check. Returns true (scan) if no gate is configured,
+    /// if the corrector isn't calibrated yet (no reference to gate against),
+    /// or if a streaming sweep is active (we want all detections regardless
+    /// of distance). Otherwise applies hysteresis: re-enter when the camera
+    /// gets within maxScanDistance, exit when it goes beyond max + hysteresis.
+    /// </summary>
+    private bool ShouldScanThisFrame()
+    {
+        if (proximityGate == null) return true;
+        if (gateBypassDuringStreaming && proximityGate.IsStreamingCalibration) return true;
+        if (!proximityGate.IsCalibrated) return true;
+
+        if (!_cameraTransform)
+        {
+            var cam = Camera.main;
+            if (!cam) return true;     // no camera reference yet; don't accidentally permanently gate off
+            _cameraTransform = cam.transform;
+        }
+
+        var camPos = _cameraTransform.position;
+        if (_inScanRange)
+        {
+            // Drop out only when beyond the outer (max + hysteresis) radius.
+            if (!proximityGate.IsCameraWithinScanRange(camPos, maxScanDistanceMeters + scanDistanceHysteresisMeters))
+            {
+                _inScanRange = false;
+            }
+        }
+        else
+        {
+            // Re-enter when within the inner (max) radius.
+            if (proximityGate.IsCameraWithinScanRange(camPos, maxScanDistanceMeters))
+            {
+                _inScanRange = true;
+            }
+        }
+        return _inScanRange;
     }
 
     private async void RefreshMarkers()

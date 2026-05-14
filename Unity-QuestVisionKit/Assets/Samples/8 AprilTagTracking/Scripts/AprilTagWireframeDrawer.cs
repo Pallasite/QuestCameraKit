@@ -19,6 +19,12 @@ public sealed class AprilTagWireframeDrawer : System.IDisposable
     Mesh _mesh;
     Material _material;
 
+    // Property IDs covering both legacy/Built-In (`_Color`) and URP (`_BaseColor`)
+    // shader conventions; the shader silently ignores whichever it doesn't define,
+    // so setting both is safe and saves us a render-pipeline detection step.
+    static readonly int ColorId = Shader.PropertyToID("_Color");
+    static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+
     public AprilTagWireframeDrawer(Material material)
     {
         _mesh = BuildWireframeMesh();
@@ -36,18 +42,37 @@ public sealed class AprilTagWireframeDrawer : System.IDisposable
     }
 
     /// <summary>
-    /// Draws the wireframe cube at the given world-space pose.
-    /// Call this from LateUpdate for each detected tag.
+    /// Draws the wireframe cube at the given world-space pose using the
+    /// drawer's base material color (no override).
     /// </summary>
-    /// <param name="worldPosition">Tag center in world space.</param>
-    /// <param name="worldRotation">Tag orientation in world space.</param>
-    /// <param name="tagSize">Physical tag size in meters (used as uniform scale).</param>
     public void Draw(Vector3 worldPosition, Quaternion worldRotation, float tagSize)
     {
         if (_mesh == null || _material == null) return;
-
         var xform = Matrix4x4.TRS(worldPosition, worldRotation, Vector3.one * tagSize);
         Graphics.DrawMesh(_mesh, xform, _material, 0);
+    }
+
+    /// <summary>
+    /// Draws the wireframe cube with a per-call color override applied via the
+    /// caller-supplied MaterialPropertyBlock. Reusing one block across all
+    /// per-frame draws avoids per-tag GC allocations. The block is mutated
+    /// in place — caller is expected to own its lifetime.
+    /// </summary>
+    public void Draw(Vector3 worldPosition, Quaternion worldRotation, float tagSize,
+                     Color color, MaterialPropertyBlock block)
+    {
+        if (_mesh == null || _material == null) return;
+        var xform = Matrix4x4.TRS(worldPosition, worldRotation, Vector3.one * tagSize);
+        if (block != null)
+        {
+            block.SetColor(ColorId, color);
+            block.SetColor(BaseColorId, color);
+            Graphics.DrawMesh(_mesh, xform, _material, 0, null, 0, block);
+        }
+        else
+        {
+            Graphics.DrawMesh(_mesh, xform, _material, 0);
+        }
     }
 
     /// <summary>
