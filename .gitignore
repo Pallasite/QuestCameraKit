@@ -121,3 +121,6 @@ Assets/.avatar_sdk_sample_assets_importer.txt
 **/RuntimeActionBindings.json
 **/RuntimeActionBindings.json.meta
 .editorconfig
+
+# MCP server config (contains personal bearer tokens — keep local)
+.mcp.json
