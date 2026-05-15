@@ -158,6 +158,17 @@ public class PipelineStatusHUD : MonoBehaviour
         _transientExpiry = Time.time + transientDurationSeconds;
     }
 
+    /// <summary>
+    /// Public entry point for other components to push a transient message to
+    /// the HUD. Pass <paramref name="durationSeconds"/> &gt; 0 to override the
+    /// default transient lifetime (useful for longer, multi-line messages).
+    /// </summary>
+    public void ShowTransient(string message, float durationSeconds = -1f)
+    {
+        _transientMessage = message;
+        _transientExpiry = Time.time + (durationSeconds > 0f ? durationSeconds : transientDurationSeconds);
+    }
+
     // ---- Event handlers ----
 
     private void HandleCalibrationProgress(int captured, int total, int tags)

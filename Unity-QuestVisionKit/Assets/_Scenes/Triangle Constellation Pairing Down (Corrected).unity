@@ -2887,6 +2887,59 @@ Transform:
   m_Children: []
   m_Father: {fileID: 866660871}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &485312226
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 485312227}
+  - component: {fileID: 485312228}
+  m_Layer: 0
+  m_Name: ControllerObstaclePlacer
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &485312227
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 485312226}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1435548985}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &485312228
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 485312226}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 361187577fa9ffa478d1f723dd3efe0a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ControllerObstaclePlacer
+  provider: {fileID: 422922646}
+  obstacle: {fileID: 0}
+  hud: {fileID: 247693094}
+  verticalOffsetMeters: 0
+  levelToFloor: 1
+  rotationOffsetEuler: {x: 0, y: 0, z: 0}
+  lockToggleButton: 8192
+  echoControlsButton: 2097152
+  hapticOnLockToggle: 1
 --- !u!1 &486274871
 GameObject:
   m_ObjectHideFlags: 0
@@ -9066,6 +9119,7 @@ Transform:
   - {fileID: 1234970242}
   - {fileID: 1804836659}
   - {fileID: 1820215479}
+  - {fileID: 485312227}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1443702460
