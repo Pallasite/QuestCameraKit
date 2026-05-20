@@ -1,29 +1,31 @@
 using UnityEngine;
 
 /// <summary>
-/// Positions a user-supplied obstacle Transform at the midpoint of the two Touch
-/// controllers, with yaw derived from the inter-controller baseline. This is a
-/// gate-free testing slice of the Phase 2 controller-based correction geometry —
-/// a quick way to see and verify the obstacle-between-controllers placement
-/// before the full <c>ControllerDriftCorrector</c> (gate stack, EMA, snap) is
-/// built.
+/// Spawns a user-supplied prefab as a runtime obstacle and positions it at the
+/// midpoint of the two Touch controllers, with yaw derived from the
+/// inter-controller baseline. A gate-free testing slice of the Phase 2
+/// controller-based correction geometry — a quick way to see and verify the
+/// obstacle-between-controllers placement before the full
+/// <c>ControllerDriftCorrector</c> (gate stack, EMA, snap) exists.
+///
+/// The placer instantiates <see cref="obstaclePrefab"/> on Start() and updates
+/// that instance's world pose every LateUpdate while following. The instance
+/// is named "&lt;prefab&gt; (placer-spawned)" so it's easy to find in the
+/// hierarchy and tell apart from the AprilTag-spawned obstacle.
 ///
 /// Modes:
-///   - Following (default): the obstacle tracks the live controller midpoint
-///     every LateUpdate. Pick up a controller and the obstacle follows.
-///   - Locked: the obstacle is frozen in place. Toggle with the lock button.
+///   - Following (default): the spawned obstacle tracks the live controller
+///     midpoint every LateUpdate. Pick up a controller → obstacle follows.
+///   - Locked: frozen in place. Toggle with the lock button.
 ///
 /// Controls (Inspector-rebindable; defaults verified free vs ObstacleFinesseController):
 ///   - Left index trigger  -> toggle follow / locked
-///   - Right index trigger -> echo the full control scheme to the Pipeline HUD
+///   - Right index trigger -> echo the full control scheme + diagnostic status
+///     to the Pipeline HUD (useful for confirming the placer is alive in-headset)
 ///
-/// The obstacle is NOT spawned — drag your own Transform into the <see cref="obstacle"/>
-/// field (a Root Obstacle instance, a placeholder cube, whatever you're testing
-/// with). Pose is read from <see cref="ControllerPoseProvider"/> (Phase 1).
-///
-/// Not the real correction: no validity/range/velocity/rigid-body/facing/step-over
-/// gates, no EMA, no snap, no write to the spatial anchor's CorrectionRoot. The
-/// placer just moves a Transform. The full pipeline remains Phase 2.
+/// Pose is read from <see cref="ControllerPoseProvider"/> (Phase 1). Not the
+/// real correction: no validity/range/velocity/rigid-body/facing/step-over
+/// gates, no EMA, no snap, no write to the spatial anchor's CorrectionRoot.
 /// </summary>
 [DisallowMultipleComponent]
 public sealed class ControllerObstaclePlacer : MonoBehaviour
@@ -32,11 +34,15 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
     [Tooltip("Source of controller poses. Auto-resolved if left empty.")]
     [SerializeField] private ControllerPoseProvider provider;
 
-    [Tooltip("The obstacle to position between the controllers. Drag any Transform here — " +
-             "a Root Obstacle instance, a placeholder cube, whatever you're testing with.")]
-    [SerializeField] private Transform obstacle;
+    [Tooltip("Prefab to instantiate as the runtime test obstacle. On Start(), one " +
+             "instance is spawned (named '<prefab> (placer-spawned)') and LateUpdate " +
+             "moves that instance to the controller midpoint while following. Use a " +
+             "visually distinct prefab so it's easy to tell apart from the " +
+             "AprilTag-spawned obstacle.")]
+    [SerializeField] private GameObject obstaclePrefab;
 
-    [Tooltip("Optional. The control scheme is echoed here on the echo-controls button press. Auto-resolved if empty.")]
+    [Tooltip("Optional. The control scheme + diagnostic status is echoed here on " +
+             "the echo-controls button press. Auto-resolved if empty.")]
     [SerializeField] private PipelineStatusHUD hud;
 
     [Header("Placement geometry")]
@@ -56,7 +62,7 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
     [Tooltip("Toggles follow / locked.")]
     [SerializeField] private OVRInput.Button lockToggleButton = OVRInput.Button.PrimaryIndexTrigger;
 
-    [Tooltip("Echoes the current control scheme to the Pipeline HUD.")]
+    [Tooltip("Echoes the current control scheme + diagnostic status to the Pipeline HUD.")]
     [SerializeField] private OVRInput.Button echoControlsButton = OVRInput.Button.SecondaryIndexTrigger;
 
     [Header("Feedback")]
@@ -64,6 +70,11 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
 
     /// <summary>True while the obstacle is frozen (not following the controllers).</summary>
     public bool IsLocked { get; private set; }
+
+    /// <summary>The runtime-spawned obstacle Transform, or null if no prefab was assigned.</summary>
+    public Transform SpawnedObstacle => _spawnedObstacle;
+
+    private Transform _spawnedObstacle;
 
     private void Awake()
     {
@@ -75,8 +86,27 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
     {
         if (!provider)
             Debug.LogError("[ControllerObstaclePlacer] No ControllerPoseProvider found. Placement disabled.");
-        if (!obstacle)
-            Debug.LogWarning("[ControllerObstaclePlacer] No obstacle assigned. Drag a Transform into the 'obstacle' field.");
+    }
+
+    private void Start()
+    {
+        if (obstaclePrefab == null)
+        {
+            Debug.LogWarning("[ControllerObstaclePlacer] No obstaclePrefab assigned. Drag a prefab into the Inspector.");
+            EchoToHud("<color=#FF8888>ControllerObstaclePlacer: no prefab assigned</color>");
+            return;
+        }
+        var go = Instantiate(obstaclePrefab);
+        go.name = $"{obstaclePrefab.name} (placer-spawned)";
+        _spawnedObstacle = go.transform;
+        EchoToHud($"<color=#88FF88>Spawned '{obstaclePrefab.name}' for placer</color>");
+        Debug.Log($"[ControllerObstaclePlacer] Spawned '{obstaclePrefab.name}'.");
+    }
+
+    private void OnDestroy()
+    {
+        if (_spawnedObstacle != null && _spawnedObstacle.gameObject != null)
+            Destroy(_spawnedObstacle.gameObject);
     }
 
     // LateUpdate so controller poses are already sampled this frame
@@ -91,7 +121,7 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
 
     private void PlaceObstacle()
     {
-        if (provider == null || obstacle == null) return;
+        if (provider == null || _spawnedObstacle == null) return;
         if (!provider.LeftPositionValid || !provider.RightPositionValid) return;
 
         Vector3 lPos = provider.LeftPose.position;
@@ -106,18 +136,18 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
         {
             Vector3 flat = new Vector3(baseline.x, 0f, baseline.z);
             rot = flat.sqrMagnitude < 1e-6f
-                ? obstacle.rotation
+                ? _spawnedObstacle.rotation
                 : Quaternion.LookRotation(flat, Vector3.up);
         }
         else
         {
             rot = baseline.sqrMagnitude < 1e-6f
-                ? obstacle.rotation
+                ? _spawnedObstacle.rotation
                 : Quaternion.LookRotation(baseline, Vector3.up);
         }
         rot *= Quaternion.Euler(rotationOffsetEuler);
 
-        obstacle.SetPositionAndRotation(midpoint, rot);
+        _spawnedObstacle.SetPositionAndRotation(midpoint, rot);
     }
 
     /// <summary>Toggle between following the controllers and being frozen in place.</summary>
@@ -143,14 +173,23 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
         }
     }
 
-    /// <summary>Echo the full control scheme (placer + finesse/calibration) to the Pipeline HUD.</summary>
+    /// <summary>Echo the full control scheme + diagnostic status to the Pipeline HUD.</summary>
     [ContextMenu("Echo Controls To HUD")]
     public void EchoControls()
     {
-        const string msg =
+        bool lValid = provider != null && provider.LeftPositionValid;
+        bool rValid = provider != null && provider.RightPositionValid;
+        string yesNoSpawn = _spawnedObstacle != null ? "yes" : "<color=#FF8888>NO</color>";
+        string yesNoL = lValid ? "yes" : "<color=#FF8888>NO</color>";
+        string yesNoR = rValid ? "yes" : "<color=#FF8888>NO</color>";
+
+        string msg =
             "<b>Drift Correction — Controls</b>\n" +
             "L index trigger : lock / unlock obstacle\n" +
             "R index trigger : show this\n" +
+            "<b>Status</b>\n" +
+            $"Locked: {(IsLocked ? "yes" : "no")} · Spawned: {yesNoSpawn}\n" +
+            $"L valid: {yesNoL} · R valid: {yesNoR}\n" +
             "<b>Obstacle finesse</b>\n" +
             "L/R thumbsticks : nudge (X/Z/Y) + yaw\n" +
             "L grip (hold) : fine mode\n" +
