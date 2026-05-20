@@ -22,16 +22,25 @@ using UnityEngine;
 /// Modes:
 ///   - Following (default): the spawned obstacle tracks the live controller
 ///     midpoint every LateUpdate. Pick up a controller → obstacle follows.
-///   - Locked: frozen in place. Toggle with the lock button.
+///   - Locked: a dedicated <see cref="OVRSpatialAnchor"/> is created at the
+///     current obstacle pose; the obstacle reparents under it for SLAM-robust
+///     anchoring. While the anchor exists, the placer emits state_snapshot
+///     rows at 5Hz (correction_source=controller_placer) so its pose can be
+///     compared against the AprilTag anchor_baseline in post-analysis. Toggle
+///     with the lock button.
 ///
 /// Controls (Inspector-rebindable; defaults verified free vs ObstacleFinesseController):
-///   - Left index trigger  -> toggle follow / locked
+///   - Left index trigger  -> toggle follow / locked (creates / destroys the anchor)
 ///   - Right index trigger -> echo the full control scheme + diagnostic status
 ///     to the Pipeline HUD (useful for confirming the placer is alive in-headset)
 ///
 /// Pose is read from <see cref="ControllerPoseProvider"/> (Phase 1). Not the
 /// real correction: no validity/range/velocity/rigid-body/facing/step-over
-/// gates, no EMA, no snap, no write to the spatial anchor's CorrectionRoot.
+/// gates, no EMA, no snap, no write to ConstellationDriftCorrector's
+/// CorrectionRoot. The placer's anchor is a *separate, dedicated* anchor —
+/// it doesn't share state with the AprilTag drift correction system, and the
+/// two anchors are tracked independently in the session log so their drift
+/// can be compared.
 /// </summary>
 [DisallowMultipleComponent]
 public sealed class ControllerObstaclePlacer : MonoBehaviour
@@ -62,7 +71,8 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
     [SerializeField] private Vector3 rotationOffsetEuler = Vector3.zero;
 
     [Header("Bindings (defaults verified free vs ObstacleFinesseController)")]
-    [Tooltip("Toggles follow / locked.")]
+    [Tooltip("Toggles follow / locked. On lock, creates a dedicated OVRSpatialAnchor and " +
+             "reparents the obstacle under it for SLAM-robust anchoring.")]
     [SerializeField] private OVRInput.Button lockToggleButton = OVRInput.Button.PrimaryIndexTrigger;
 
     [Tooltip("Echoes the current control scheme + diagnostic status to the Pipeline HUD.")]
@@ -71,13 +81,28 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
     [Header("Feedback")]
     [SerializeField] private bool hapticOnLockToggle = true;
 
+    [Header("Anchor logging")]
+    [Tooltip("While the dedicated anchor exists, emit state_snapshot rows at this rate " +
+             "(correction_source=controller_placer) so the placer-anchor pose can be " +
+             "compared against the AprilTag anchor_baseline source in post.")]
+    [SerializeField, Range(1f, 30f)] private float anchorSnapshotRateHz = 5f;
+
     /// <summary>True while the obstacle is frozen (not following the controllers).</summary>
     public bool IsLocked { get; private set; }
 
     /// <summary>The runtime-spawned obstacle Transform, or null if no prefab was assigned.</summary>
     public Transform SpawnedObstacle => _spawnedObstacle;
 
+    /// <summary>The dedicated OVRSpatialAnchor created on lock, or null while unlocked.</summary>
+    public OVRSpatialAnchor PlacerAnchor => _anchor;
+
+    /// <summary>True while the placer anchor exists (i.e. while locked).</summary>
+    public bool IsAnchorActive => _anchor != null;
+
     private Transform _spawnedObstacle;
+    private GameObject _anchorGo;
+    private OVRSpatialAnchor _anchor;
+    private float _nextAnchorSnapshotTime;
 
     private void Awake()
     {
@@ -108,6 +133,8 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
 
     private void OnDestroy()
     {
+        // Clean up anchor first (detaches obstacle back to scene root), then destroy the obstacle.
+        DestroyAnchor();
         if (_spawnedObstacle != null && _spawnedObstacle.gameObject != null)
             Destroy(_spawnedObstacle.gameObject);
     }
@@ -120,6 +147,15 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
         if (OVRInput.GetDown(echoControlsButton)) EchoControls();
 
         if (!IsLocked) PlaceObstacle();
+
+        // While the dedicated anchor exists, emit periodic state_snapshot rows so
+        // the placer-anchor pose can be compared against the AprilTag anchor_baseline
+        // source (logged by AnchorBaselineLogger) in post-analysis.
+        if (_anchor != null && Time.unscaledTime >= _nextAnchorSnapshotTime)
+        {
+            _nextAnchorSnapshotTime = Time.unscaledTime + 1f / Mathf.Max(0.1f, anchorSnapshotRateHz);
+            EmitAnchorSnapshot();
+        }
     }
 
     private void PlaceObstacle()
@@ -152,11 +188,20 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
         _spawnedObstacle.SetPositionAndRotation(midpoint, rot);
     }
 
-    /// <summary>Toggle between following the controllers and being frozen in place.</summary>
+    /// <summary>
+    /// Toggle between following the controllers and being frozen + anchored.
+    /// On lock: creates a dedicated <see cref="OVRSpatialAnchor"/> at the
+    /// current obstacle pose and reparents the obstacle under it (SLAM
+    /// maintains the anchored pose against drift). On unlock: detaches the
+    /// obstacle and destroys the anchor; following resumes next frame.
+    /// </summary>
     [ContextMenu("Toggle Lock")]
     public void ToggleLock()
     {
         IsLocked = !IsLocked;
+
+        if (IsLocked) CreateAnchor();
+        else DestroyAnchor();
 
         if (hapticOnLockToggle && provider != null)
         {
@@ -164,14 +209,14 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
             provider.Pulse(OVRInput.Controller.RTouch, 1f, 0.5f, 0.06f);
         }
 
-        string state = IsLocked ? "LOCKED" : "following controllers";
+        string state = IsLocked ? "LOCKED + ANCHORED" : "following controllers";
         EchoToHud($"<color=#FFFF88>Obstacle {state}</color>");
         Debug.Log($"[ControllerObstaclePlacer] Obstacle {state}.");
 
         if (SessionLogger.Instance != null)
         {
-            SessionLogger.Instance.Enqueue(LogEvent.SessionEvent(
-                "obstacle_placer_lock", $"locked={(IsLocked ? 1 : 0)}"));
+            var detail = $"locked={(IsLocked ? 1 : 0)};anchor={(_anchor != null ? 1 : 0)}";
+            SessionLogger.Instance.Enqueue(LogEvent.SessionEvent("obstacle_placer_lock", detail));
         }
     }
 
@@ -182,15 +227,16 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
         bool lValid = provider != null && provider.LeftPositionValid;
         bool rValid = provider != null && provider.RightPositionValid;
         string yesNoSpawn = _spawnedObstacle != null ? "yes" : "<color=#FF8888>NO</color>";
+        string yesNoAnchor = _anchor != null ? "yes" : "no";
         string yesNoL = lValid ? "yes" : "<color=#FF8888>NO</color>";
         string yesNoR = rValid ? "yes" : "<color=#FF8888>NO</color>";
 
         string msg =
             "<b>Drift Correction — Controls</b>\n" +
-            "L index trigger : lock / unlock obstacle\n" +
+            "L index trigger : lock / unlock obstacle (creates/destroys anchor)\n" +
             "R index trigger : show this\n" +
             "<b>Status</b>\n" +
-            $"Locked: {(IsLocked ? "yes" : "no")} · Spawned: {yesNoSpawn}\n" +
+            $"Locked: {(IsLocked ? "yes" : "no")} · Spawned: {yesNoSpawn} · Anchor: {yesNoAnchor}\n" +
             $"L valid: {yesNoL} · R valid: {yesNoR}\n" +
             "<b>Obstacle finesse</b>\n" +
             "L/R thumbsticks : nudge (X/Z/Y) + yaw\n" +
@@ -207,5 +253,67 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
     private void EchoToHud(string message)
     {
         if (hud != null) hud.ShowTransient(message, 8f);
+    }
+
+    // ---- dedicated anchor lifecycle ----
+    //
+    // The placer's anchor is created on lock and destroyed on unlock. It's a
+    // *separate* OVRSpatialAnchor from the one owned by ConstellationDriftCorrector
+    // (which anchors the AprilTag constellation). Keeping them separate means
+    // each correction system manages its own offsets and the session log can
+    // track both in parallel for drift comparison.
+
+    private void CreateAnchor()
+    {
+        if (_anchorGo != null)
+        {
+            Debug.LogWarning("[ControllerObstaclePlacer] Anchor already exists; skipping create.");
+            return;
+        }
+        if (_spawnedObstacle == null)
+        {
+            Debug.LogWarning("[ControllerObstaclePlacer] No spawned obstacle to anchor.");
+            return;
+        }
+
+        _anchorGo = new GameObject("ControllerPlacerAnchor");
+        _anchorGo.transform.SetPositionAndRotation(_spawnedObstacle.position, _spawnedObstacle.rotation);
+        _anchor = _anchorGo.AddComponent<OVRSpatialAnchor>();
+
+        // Reparent the obstacle under the anchor, preserving its current world
+        // pose. Subsequent SLAM corrections to the anchor move the obstacle with it.
+        _spawnedObstacle.SetParent(_anchorGo.transform, worldPositionStays: true);
+
+        // Reset snapshot cadence so the first row goes out promptly on the next LateUpdate.
+        _nextAnchorSnapshotTime = 0f;
+
+        Debug.Log($"[ControllerObstaclePlacer] Anchor created at {_anchorGo.transform.position}.");
+    }
+
+    private void DestroyAnchor()
+    {
+        if (_anchorGo == null && _anchor == null) return;
+
+        // Detach the obstacle back to scene root, preserving its current world pose.
+        // (The next LateUpdate-with-IsLocked-false will immediately overwrite that
+        // pose with the live controller midpoint, so this is mostly for cleanliness
+        // during the same-frame unlock + follow transition.)
+        if (_spawnedObstacle != null && _spawnedObstacle.gameObject != null)
+            _spawnedObstacle.SetParent(null, worldPositionStays: true);
+
+        if (_anchorGo != null) Destroy(_anchorGo);
+        _anchorGo = null;
+        _anchor = null;
+
+        Debug.Log("[ControllerObstaclePlacer] Anchor destroyed.");
+    }
+
+    private void EmitAnchorSnapshot()
+    {
+        if (SessionLogger.Instance == null || _anchorGo == null) return;
+        var e = LogEvent.StateSnapshot("controller_placer", mode: "applied");
+        e.AnchorPos = _anchorGo.transform.position;
+        e.AnchorRot = _anchorGo.transform.rotation;
+        SessionLogger.Instance.Enqueue(e);
     }
 }
