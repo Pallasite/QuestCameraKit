@@ -2,11 +2,17 @@ using UnityEngine;
 
 /// <summary>
 /// Spawns a user-supplied prefab as a runtime obstacle and positions it at the
-/// midpoint of the two Touch controllers, with yaw derived from the
-/// inter-controller baseline. A gate-free testing slice of the Phase 2
-/// controller-based correction geometry — a quick way to see and verify the
-/// obstacle-between-controllers placement before the full
+/// midpoint of the two Touch controllers, with the obstacle's local +Z aligned
+/// *perpendicular* to the inter-controller baseline (i.e., facing the user's
+/// walking direction, not along the rig line). A gate-free testing slice of
+/// the Phase 2 controller-based correction geometry — a quick way to see and
+/// verify the obstacle-between-controllers placement before the full
 /// <c>ControllerDriftCorrector</c> (gate stack, EMA, snap) exists.
+///
+/// Convention: when the experimenter places the controllers while facing
+/// world +Z, baseline ≈ +X and the obstacle's local +Z resolves to world +Z.
+/// Use <see cref="rotationOffsetEuler"/> (e.g. <c>(0, 180, 0)</c>) to flip if
+/// the obstacle ends up facing the wrong way.
 ///
 /// The placer instantiates <see cref="obstaclePrefab"/> on Start() and updates
 /// that instance's world pose every LateUpdate while following. The instance
@@ -50,12 +56,9 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
              "Use this to drop the obstacle from controller/rig height down onto the gait mat.")]
     [SerializeField] private float verticalOffsetMeters = 0f;
 
-    [Tooltip("When on, only baseline yaw is applied and the obstacle stays level with the floor. " +
-             "When off, the obstacle tilts with the raw baseline vector.")]
-    [SerializeField] private bool levelToFloor = true;
-
-    [Tooltip("Euler rotation offset applied after the baseline yaw. Use this to align your " +
-             "obstacle's long axis with the baseline (e.g. 0,90,0 if its long axis is local X).")]
+    [Tooltip("Euler rotation offset applied after the perpendicular yaw. Use (0,180,0) to flip " +
+             "the obstacle if it ends up facing toward the user instead of along the walking " +
+             "direction, or to compensate for a prefab whose long axis isn't its local X.")]
     [SerializeField] private Vector3 rotationOffsetEuler = Vector3.zero;
 
     [Header("Bindings (defaults verified free vs ObstacleFinesseController)")]
@@ -131,20 +134,19 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
         midpoint.y += verticalOffsetMeters;
 
         Vector3 baseline = rPos - lPos;
-        Quaternion rot;
-        if (levelToFloor)
-        {
-            Vector3 flat = new Vector3(baseline.x, 0f, baseline.z);
-            rot = flat.sqrMagnitude < 1e-6f
-                ? _spawnedObstacle.rotation
-                : Quaternion.LookRotation(flat, Vector3.up);
-        }
-        else
-        {
-            rot = baseline.sqrMagnitude < 1e-6f
-                ? _spawnedObstacle.rotation
-                : Quaternion.LookRotation(baseline, Vector3.up);
-        }
+
+        // Obstacle's local +Z points perpendicular to the baseline, in the
+        // floor plane. With the user facing world +Z when placing the
+        // controllers, baseline ≈ +X and Cross(+X, +Y) = +Z — obstacle faces
+        // the walking direction, not the rig line. Cross(*, up) always lands
+        // in XZ regardless of the baseline's Y component, so a tilted rig
+        // doesn't tilt the obstacle. If tilt-preservation is wanted later it
+        // needs a different design (rolling local +X along the raw baseline).
+        Vector3 forward = Vector3.Cross(baseline, Vector3.up);
+
+        Quaternion rot = forward.sqrMagnitude < 1e-6f
+            ? _spawnedObstacle.rotation   // controllers stacked vertically; hold prior rotation
+            : Quaternion.LookRotation(forward, Vector3.up);
         rot *= Quaternion.Euler(rotationOffsetEuler);
 
         _spawnedObstacle.SetPositionAndRotation(midpoint, rot);
