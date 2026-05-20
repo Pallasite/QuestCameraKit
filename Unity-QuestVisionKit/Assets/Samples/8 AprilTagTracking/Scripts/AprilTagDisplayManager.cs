@@ -73,6 +73,20 @@ public class AprilTagDisplayManager : MonoBehaviour
              "explicitly wants to see every tag the headset can find, not just nearby ones.")]
     [SerializeField] private bool gateBypassDuringStreaming = true;
 
+    [Header("Scan throttle (perf — stereo capture + AprilTag detect runs per scan, not free)")]
+    [Tooltip("Master toggle. When false, the per-frame scan is skipped entirely; existing markers " +
+             "stay frozen at their last detected positions. ConstellationDriftCorrector's anchor " +
+             "stops receiving updates but doesn't break. Useful for A/B perf testing or freezing " +
+             "the world for participant runs.")]
+    [SerializeField] private bool enableScanning = true;
+
+    [Tooltip("Maximum scan rate in Hz. Default 5Hz matches the downstream consistency-window " +
+             "cadence (ConstellationDriftCorrector needs 5 consistent frames before applying a " +
+             "correction, so faster scanning gives no extra correction quality). Lower for less " +
+             "compute; raise toward 30+Hz to verify per-frame cost. Bypassed during a " +
+             "streaming-calibration sweep, which always runs full-rate.")]
+    [SerializeField, Range(0.5f, 90f)] private float scanRateHz = 5f;
+
     /// <summary>
     /// Fired each frame that tags are detected, after world poses are computed.
     /// Subscribe from additional visualizers (e.g. AprilTagWireframeVisualizer)
@@ -95,6 +109,11 @@ public class AprilTagDisplayManager : MonoBehaviour
     // it lazily based on hysteresis so the gate doesn't flicker at the boundary.
     private bool _inScanRange = true;
 
+    // Scan throttle state. Updated each time a scan kicks off; checked at the
+    // top of Update before any other gating, so we never even call ShouldScan
+    // when we're throttling.
+    private float _nextScanTime;
+
     private void Awake()
     {
         // Prefer a stereo scanner if present (it triangulates and avoids the
@@ -116,8 +135,19 @@ public class AprilTagDisplayManager : MonoBehaviour
 
     private void Update()
     {
+        if (!enableScanning) return;
         if (_scanInProgress || Time.time < _backoffUntil) return;
+
+        // Bypass the rate throttle during a streaming-calibration sweep — the
+        // sweep wants every detection it can get, and gateBypassDuringStreaming
+        // already covers the proximity gate during sweeps.
+        bool inSweep = gateBypassDuringStreaming
+                       && proximityGate != null
+                       && proximityGate.IsStreamingCalibration;
+        if (!inSweep && Time.time < _nextScanTime) return;
+
         if (!ShouldScanThisFrame()) return;
+        _nextScanTime = Time.time + 1f / Mathf.Max(0.01f, scanRateHz);
         RefreshMarkers();
     }
 
