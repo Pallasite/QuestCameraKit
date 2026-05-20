@@ -29,17 +29,39 @@ using UnityEngine;
 ///   Right HandTrigger + A → batch calibrate constellation (one-shot ScanCalibrationAsync)
 ///   Right HandTrigger + B → toggle streaming calibration sweep (Begin if idle, Commit if sweeping)
 ///   Right HandTrigger + R thumbstick click → cancel an in-progress streaming sweep
+///   L thumbstick click → toggle finesse target (AprilTag obstacle ↔ controller-placer obstacle)
 /// </summary>
 public class ObstacleFinesseController : MonoBehaviour
 {
+    /// <summary>Which obstacle the finesse bindings currently nudge.</summary>
+    public enum FinesseTarget
+    {
+        /// <summary>The AprilTag-anchored obstacle (ConstellationDriftCorrector.Obstacle).</summary>
+        AprilTag,
+        /// <summary>The controller-placer's spawned obstacle (ControllerObstaclePlacer.SpawnedObstacle).</summary>
+        Placer
+    }
+
     [Header("Wiring")]
     [SerializeField] private QuestControllerInput input;
 
-    [Tooltip("Pulls the obstacle from ConstellationDriftCorrector.Obstacle when set. Leave the manual target null to use this auto-resolution path.")]
+    [Tooltip("Pulls the AprilTag obstacle from ConstellationDriftCorrector.Obstacle when set. Leave the manual target null to use this auto-resolution path.")]
     [SerializeField] private ConstellationDriftCorrector corrector;
 
-    [Tooltip("Manual override. If set, this transform is nudged directly and the corrector is ignored.")]
+    [Tooltip("Reference to the controller-placer; auto-resolved if empty. Required when activeTarget = Placer.")]
+    [SerializeField] private ControllerObstaclePlacer placer;
+
+    [Tooltip("Manual override. If set, this transform is nudged directly and both corrector / placer are ignored.")]
     [SerializeField] private Transform manualTarget;
+
+    [Header("Target")]
+    [Tooltip("Which obstacle the finesse bindings act on. Toggle at runtime with toggleTargetButton " +
+             "(default L thumbstick click).")]
+    [SerializeField] private FinesseTarget activeTarget = FinesseTarget.AprilTag;
+
+    [Tooltip("Button that toggles which obstacle the finesse bindings target. Default L thumbstick " +
+             "click (PrimaryThumbstick) is verified free vs the other finesse / calibration chords.")]
+    [SerializeField] private OVRInput.Button toggleTargetButton = OVRInput.Button.PrimaryThumbstick;
 
     [Header("Step sizes")]
     [SerializeField] private float coarseTranslationMeters = 0.01f; // 1 cm
@@ -58,14 +80,25 @@ public class ObstacleFinesseController : MonoBehaviour
         get
         {
             if (manualTarget) return manualTarget;
-            if (corrector && corrector.Obstacle) return corrector.Obstacle.transform;
+            switch (activeTarget)
+            {
+                case FinesseTarget.AprilTag:
+                    return (corrector && corrector.Obstacle) ? corrector.Obstacle.transform : null;
+                case FinesseTarget.Placer:
+                    return (placer != null) ? placer.SpawnedObstacle : null;
+            }
             return null;
         }
     }
 
+    /// <summary>Read-only view of which obstacle the finesse bindings are currently driving.</summary>
+    public FinesseTarget ActiveTarget => activeTarget;
+
     public bool FineMode => input && input.IsHeld(OVRInput.Button.PrimaryHandTrigger);
     private float TranslationStep => FineMode ? fineTranslationMeters : coarseTranslationMeters;
     private float RotationStep => FineMode ? fineRotationDegrees : coarseRotationDegrees;
+
+    private PipelineStatusHUD _hud;
 
     private void Awake()
     {
@@ -78,6 +111,11 @@ public class ObstacleFinesseController : MonoBehaviour
         {
             Debug.LogWarning("[FinesseController] No ConstellationDriftCorrector or manual target assigned. Assign one in the Inspector.");
         }
+        // Auto-resolve the placer and HUD for the runtime target-switch flow.
+        // The placer is only required when activeTarget = Placer; the HUD is
+        // optional (haptic + Debug.Log still give feedback if it's missing).
+        if (!placer) placer = FindAnyObjectByType<ControllerObstaclePlacer>();
+        if (!_hud) _hud = FindAnyObjectByType<PipelineStatusHUD>();
     }
 
     private void OnEnable()
@@ -135,6 +173,14 @@ public class ObstacleFinesseController : MonoBehaviour
     private void Update()
     {
         if (!input) return;
+
+        // Target switch (no modifier — defaults to L thumbstick click). Runs
+        // before all the grip-modified chords so it can't be eaten by them.
+        if (input.WasPressedThisFrame(toggleTargetButton))
+        {
+            ToggleActiveTarget();
+            return;
+        }
 
         var leftGrip = input.IsHeld(OVRInput.Button.PrimaryHandTrigger);
         var rightGrip = input.IsHeld(OVRInput.Button.SecondaryHandTrigger);
@@ -267,6 +313,43 @@ public class ObstacleFinesseController : MonoBehaviour
             Invoke(nameof(StopHaptics), 0.2f);
         }
         corrector.CancelStreamingCalibration();
+    }
+
+    /// <summary>
+    /// Toggle which obstacle the finesse bindings drive: AprilTag (the
+    /// ConstellationDriftCorrector's obstacle) or Placer (the
+    /// ControllerObstaclePlacer's spawned obstacle). Both retain their
+    /// independent local offsets across switches — the offsets live on
+    /// each obstacle's <c>transform.localPose</c>, not on this controller.
+    /// </summary>
+    [ContextMenu("Toggle Finesse Target")]
+    public void ToggleActiveTarget()
+    {
+        activeTarget = activeTarget == FinesseTarget.AprilTag
+            ? FinesseTarget.Placer
+            : FinesseTarget.AprilTag;
+
+        // Tactile + visual confirmation. Double-pulse both controllers so the
+        // gesture is distinct from a normal nudge.
+        if (hapticOnNudge)
+        {
+            Pulse(OVRInput.Controller.LTouch);
+            Pulse(OVRInput.Controller.RTouch);
+        }
+
+        if (_hud == null) _hud = FindAnyObjectByType<PipelineStatusHUD>();
+        if (_hud != null)
+        {
+            _hud.ShowTransient($"<color=#FFFF88>Finesse target: {activeTarget.ToString().ToUpperInvariant()}</color>", 4f);
+        }
+
+        Debug.Log($"[FinesseController] Finesse target switched to {activeTarget}.");
+
+        if (SessionLogger.Instance != null)
+        {
+            SessionLogger.Instance.Enqueue(LogEvent.SessionEvent(
+                "finesse_target", $"target={activeTarget.ToString().ToLowerInvariant()}"));
+        }
     }
 
     private void NudgeLocal(Transform t, Vector3 deltaLocal, string label, OVRInput.Controller pulseOn)

@@ -9,25 +9,35 @@ using UnityEngine;
 /// verify the obstacle-between-controllers placement before the full
 /// <c>ControllerDriftCorrector</c> (gate stack, EMA, snap) exists.
 ///
+/// <para>Two-layer hierarchy, mirroring the AprilTag <c>CorrectionRoot</c> /
+/// <c>Obstacle</c> pattern so the finesse controller can layer a per-session
+/// nudge offset on top of the controller-derived placement:</para>
+///
+/// <code>
+/// ControllerPlacerAnchor                 (created on lock — OVRSpatialAnchor)
+///   └── ControllerPlacerCorrectionRoot    (placer writes here every LateUpdate)
+///         └── SpawnedObstacle              (finesse writes localPose here)
+/// </code>
+///
+/// The placer's <see cref="PlaceObstacle"/> writes the controller-midpoint
+/// world pose to the <c>CorrectionRoot</c>; the obstacle's local pose
+/// (finesse offset) sits on top and is preserved across follow updates and
+/// across the lock/unlock anchor reparenting.
+///
 /// Convention: when the experimenter places the controllers while facing
 /// world +Z, baseline ≈ +X and the obstacle's local +Z resolves to world +Z.
 /// Use <see cref="rotationOffsetEuler"/> (e.g. <c>(0, 180, 0)</c>) to flip if
 /// the obstacle ends up facing the wrong way.
 ///
-/// The placer instantiates <see cref="obstaclePrefab"/> on Start() and updates
-/// that instance's world pose every LateUpdate while following. The instance
-/// is named "&lt;prefab&gt; (placer-spawned)" so it's easy to find in the
-/// hierarchy and tell apart from the AprilTag-spawned obstacle.
-///
 /// Modes:
-///   - Following (default): the spawned obstacle tracks the live controller
+///   - Following (default): the correction-root tracks the live controller
 ///     midpoint every LateUpdate. Pick up a controller → obstacle follows.
 ///   - Locked: a dedicated <see cref="OVRSpatialAnchor"/> is created at the
-///     current obstacle pose; the obstacle reparents under it for SLAM-robust
-///     anchoring. While the anchor exists, the placer emits state_snapshot
-///     rows at 5Hz (correction_source=controller_placer) so its pose can be
-///     compared against the AprilTag anchor_baseline in post-analysis. Toggle
-///     with the lock button.
+///     current correction-root pose; the correction-root reparents under it
+///     for SLAM-robust anchoring. While the anchor exists, the placer emits
+///     state_snapshot rows at 5Hz (correction_source=controller_placer) so
+///     its pose can be compared against the AprilTag anchor_baseline in
+///     post-analysis. Toggle with the lock button.
 ///
 /// Controls (Inspector-rebindable; defaults verified free vs ObstacleFinesseController):
 ///   - Left index trigger  -> toggle follow / locked (creates / destroys the anchor)
@@ -50,10 +60,12 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
     [SerializeField] private ControllerPoseProvider provider;
 
     [Tooltip("Prefab to instantiate as the runtime test obstacle. On Start(), one " +
-             "instance is spawned (named '<prefab> (placer-spawned)') and LateUpdate " +
-             "moves that instance to the controller midpoint while following. Use a " +
-             "visually distinct prefab so it's easy to tell apart from the " +
-             "AprilTag-spawned obstacle.")]
+             "instance is spawned (named '<prefab> (placer-spawned)') as a child of an " +
+             "intermediate CorrectionRoot wrapper. LateUpdate moves the wrapper to the " +
+             "controller midpoint while following; the obstacle's local pose under the " +
+             "wrapper is the finesse offset (ObstacleFinesseController writes there when " +
+             "its target is Placer). Use a visually distinct prefab so it's easy to tell " +
+             "apart from the AprilTag-spawned obstacle.")]
     [SerializeField] private GameObject obstaclePrefab;
 
     [Tooltip("Optional. The control scheme + diagnostic status is echoed here on " +
@@ -72,7 +84,7 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
 
     [Header("Bindings (defaults verified free vs ObstacleFinesseController)")]
     [Tooltip("Toggles follow / locked. On lock, creates a dedicated OVRSpatialAnchor and " +
-             "reparents the obstacle under it for SLAM-robust anchoring.")]
+             "reparents the correction-root (which contains the obstacle) under it.")]
     [SerializeField] private OVRInput.Button lockToggleButton = OVRInput.Button.PrimaryIndexTrigger;
 
     [Tooltip("Echoes the current control scheme + diagnostic status to the Pipeline HUD.")]
@@ -90,8 +102,11 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
     /// <summary>True while the obstacle is frozen (not following the controllers).</summary>
     public bool IsLocked { get; private set; }
 
-    /// <summary>The runtime-spawned obstacle Transform, or null if no prefab was assigned.</summary>
+    /// <summary>The runtime-spawned obstacle Transform (the finesse target — child of the correction root).</summary>
     public Transform SpawnedObstacle => _spawnedObstacle;
+
+    /// <summary>The intermediate CorrectionRoot wrapper between the anchor and the obstacle. The placer writes its world pose; the obstacle's localPose under it is the finesse offset.</summary>
+    public Transform PlacerCorrectionRoot => _correctionRoot;
 
     /// <summary>The dedicated OVRSpatialAnchor created on lock, or null while unlocked.</summary>
     public OVRSpatialAnchor PlacerAnchor => _anchor;
@@ -99,15 +114,21 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
     /// <summary>True while the placer anchor exists (i.e. while locked).</summary>
     public bool IsAnchorActive => _anchor != null;
 
+    private Transform _correctionRoot;
     private Transform _spawnedObstacle;
     private GameObject _anchorGo;
     private OVRSpatialAnchor _anchor;
     private float _nextAnchorSnapshotTime;
+    private ObstacleFinesseController _finesseController;
 
     private void Awake()
     {
         if (!provider) provider = FindAnyObjectByType<ControllerPoseProvider>();
         if (!hud) hud = FindAnyObjectByType<PipelineStatusHUD>();
+        // Cache the finesse controller so the echo can show the current target.
+        // Optional — the placer doesn't depend on it for placement.
+        if (_finesseController == null)
+            _finesseController = FindAnyObjectByType<ObstacleFinesseController>();
     }
 
     private void OnEnable()
@@ -124,19 +145,33 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
             EchoToHud("<color=#FF8888>ControllerObstaclePlacer: no prefab assigned</color>");
             return;
         }
-        var go = Instantiate(obstaclePrefab);
+
+        // Wrapper Transform. Placer writes its world pose every LateUpdate while
+        // following. On lock the anchor parents this wrapper; the obstacle child
+        // inherits anchoring + retains its finesse offset.
+        var rootGo = new GameObject("ControllerPlacerCorrectionRoot");
+        _correctionRoot = rootGo.transform;
+
+        // Obstacle is a child of the wrapper. Its localPose is the finesse offset
+        // (zero by default; ObstacleFinesseController writes here when targeting Placer).
+        var go = Instantiate(obstaclePrefab, _correctionRoot);
         go.name = $"{obstaclePrefab.name} (placer-spawned)";
+        go.transform.localPosition = Vector3.zero;
+        go.transform.localRotation = Quaternion.identity;
         _spawnedObstacle = go.transform;
+
         EchoToHud($"<color=#88FF88>Spawned '{obstaclePrefab.name}' for placer</color>");
-        Debug.Log($"[ControllerObstaclePlacer] Spawned '{obstaclePrefab.name}'.");
+        Debug.Log($"[ControllerObstaclePlacer] Spawned '{obstaclePrefab.name}' under ControllerPlacerCorrectionRoot.");
     }
 
     private void OnDestroy()
     {
-        // Clean up anchor first (detaches obstacle back to scene root), then destroy the obstacle.
+        // Detach + drop the anchor first (DestroyAnchor reparents the correction
+        // root back to scene root if locked), then destroy the wrapper which
+        // takes the obstacle child with it.
         DestroyAnchor();
-        if (_spawnedObstacle != null && _spawnedObstacle.gameObject != null)
-            Destroy(_spawnedObstacle.gameObject);
+        if (_correctionRoot != null && _correctionRoot.gameObject != null)
+            Destroy(_correctionRoot.gameObject);
     }
 
     // LateUpdate so controller poses are already sampled this frame
@@ -160,7 +195,7 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
 
     private void PlaceObstacle()
     {
-        if (provider == null || _spawnedObstacle == null) return;
+        if (provider == null || _correctionRoot == null) return;
         if (!provider.LeftPositionValid || !provider.RightPositionValid) return;
 
         Vector3 lPos = provider.LeftPose.position;
@@ -181,19 +216,23 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
         Vector3 forward = Vector3.Cross(baseline, Vector3.up);
 
         Quaternion rot = forward.sqrMagnitude < 1e-6f
-            ? _spawnedObstacle.rotation   // controllers stacked vertically; hold prior rotation
+            ? _correctionRoot.rotation    // controllers stacked vertically; hold prior rotation
             : Quaternion.LookRotation(forward, Vector3.up);
         rot *= Quaternion.Euler(rotationOffsetEuler);
 
-        _spawnedObstacle.SetPositionAndRotation(midpoint, rot);
+        // Write to the wrapper, NOT the obstacle. The obstacle's localPose
+        // under the wrapper is the finesse offset and is owned by
+        // ObstacleFinesseController when its target is Placer.
+        _correctionRoot.SetPositionAndRotation(midpoint, rot);
     }
 
     /// <summary>
     /// Toggle between following the controllers and being frozen + anchored.
     /// On lock: creates a dedicated <see cref="OVRSpatialAnchor"/> at the
-    /// current obstacle pose and reparents the obstacle under it (SLAM
-    /// maintains the anchored pose against drift). On unlock: detaches the
-    /// obstacle and destroys the anchor; following resumes next frame.
+    /// current correction-root pose and reparents the correction-root (with
+    /// its obstacle child) under it (SLAM maintains the anchored pose). On
+    /// unlock: detaches the correction-root and destroys the anchor;
+    /// following resumes next frame.
     /// </summary>
     [ContextMenu("Toggle Lock")]
     public void ToggleLock()
@@ -231,13 +270,20 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
         string yesNoL = lValid ? "yes" : "<color=#FF8888>NO</color>";
         string yesNoR = rValid ? "yes" : "<color=#FF8888>NO</color>";
 
+        if (_finesseController == null)
+            _finesseController = FindAnyObjectByType<ObstacleFinesseController>();
+        string finesseTarget = _finesseController != null
+            ? _finesseController.ActiveTarget.ToString()
+            : "(no finesse)";
+
         string msg =
             "<b>Drift Correction — Controls</b>\n" +
             "L index trigger : lock / unlock obstacle (creates/destroys anchor)\n" +
             "R index trigger : show this\n" +
+            "L thumbstick click : switch finesse target (AprilTag ↔ Placer)\n" +
             "<b>Status</b>\n" +
             $"Locked: {(IsLocked ? "yes" : "no")} · Spawned: {yesNoSpawn} · Anchor: {yesNoAnchor}\n" +
-            $"L valid: {yesNoL} · R valid: {yesNoR}\n" +
+            $"L valid: {yesNoL} · R valid: {yesNoR} · Finesse: {finesseTarget}\n" +
             "<b>Obstacle finesse</b>\n" +
             "L/R thumbsticks : nudge (X/Z/Y) + yaw\n" +
             "L grip (hold) : fine mode\n" +
@@ -262,6 +308,11 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
     // (which anchors the AprilTag constellation). Keeping them separate means
     // each correction system manages its own offsets and the session log can
     // track both in parallel for drift comparison.
+    //
+    // The reparented child is the CorrectionRoot (which contains the obstacle
+    // as its own child), not the obstacle directly — this preserves the
+    // two-layer hierarchy across lock/unlock, exactly as the AprilTag system
+    // does with its CorrectionRoot.
 
     private void CreateAnchor()
     {
@@ -270,19 +321,21 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
             Debug.LogWarning("[ControllerObstaclePlacer] Anchor already exists; skipping create.");
             return;
         }
-        if (_spawnedObstacle == null)
+        if (_correctionRoot == null)
         {
-            Debug.LogWarning("[ControllerObstaclePlacer] No spawned obstacle to anchor.");
+            Debug.LogWarning("[ControllerObstaclePlacer] No correction root to anchor.");
             return;
         }
 
         _anchorGo = new GameObject("ControllerPlacerAnchor");
-        _anchorGo.transform.SetPositionAndRotation(_spawnedObstacle.position, _spawnedObstacle.rotation);
+        _anchorGo.transform.SetPositionAndRotation(_correctionRoot.position, _correctionRoot.rotation);
         _anchor = _anchorGo.AddComponent<OVRSpatialAnchor>();
 
-        // Reparent the obstacle under the anchor, preserving its current world
-        // pose. Subsequent SLAM corrections to the anchor move the obstacle with it.
-        _spawnedObstacle.SetParent(_anchorGo.transform, worldPositionStays: true);
+        // Reparent the correction root (and its obstacle child) under the anchor,
+        // preserving the current world pose. Subsequent SLAM corrections to the
+        // anchor will move both with it; the obstacle's finesse offset relative
+        // to the correction root is preserved automatically.
+        _correctionRoot.SetParent(_anchorGo.transform, worldPositionStays: true);
 
         // Reset snapshot cadence so the first row goes out promptly on the next LateUpdate.
         _nextAnchorSnapshotTime = 0f;
@@ -294,12 +347,13 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
     {
         if (_anchorGo == null && _anchor == null) return;
 
-        // Detach the obstacle back to scene root, preserving its current world pose.
-        // (The next LateUpdate-with-IsLocked-false will immediately overwrite that
-        // pose with the live controller midpoint, so this is mostly for cleanliness
-        // during the same-frame unlock + follow transition.)
-        if (_spawnedObstacle != null && _spawnedObstacle.gameObject != null)
-            _spawnedObstacle.SetParent(null, worldPositionStays: true);
+        // Detach the correction root back to scene root, preserving its
+        // current world pose. (The next LateUpdate-with-IsLocked-false will
+        // immediately overwrite that pose with the live controller midpoint,
+        // so this is mostly for cleanliness during the same-frame unlock +
+        // follow transition.)
+        if (_correctionRoot != null && _correctionRoot.gameObject != null)
+            _correctionRoot.SetParent(null, worldPositionStays: true);
 
         if (_anchorGo != null) Destroy(_anchorGo);
         _anchorGo = null;
