@@ -2934,12 +2934,12 @@ MonoBehaviour:
   provider: {fileID: 422922646}
   obstaclePrefab: {fileID: 3894346489432973563, guid: 98d1477f9650d424388e7803928a75ff, type: 3}
   hud: {fileID: 247693094}
-  verticalOffsetMeters: 0
-  levelToFloor: 1
+  verticalOffsetMeters: -0.38
   rotationOffsetEuler: {x: 0, y: 0, z: 0}
   lockToggleButton: 8192
   echoControlsButton: 2097152
   hapticOnLockToggle: 1
+  anchorSnapshotRateHz: 5
 --- !u!1 &486274871
 GameObject:
   m_ObjectHideFlags: 0
@@ -4096,7 +4096,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ObstacleFinesseController
   input: {fileID: 593700557}
   corrector: {fileID: 665711662}
+  placer: {fileID: 0}
   manualTarget: {fileID: 0}
+  activeTarget: 0
+  toggleTargetButton: 32768
   coarseTranslationMeters: 0.01
   fineTranslationMeters: 0.001
   coarseRotationDegrees: 1
@@ -4619,6 +4622,8 @@ MonoBehaviour:
   maxScanDistanceMeters: 2.5
   scanDistanceHysteresisMeters: 0.5
   gateBypassDuringStreaming: 1
+  enableScanning: 1
+  scanRateHz: 5
 --- !u!4 &665711654
 Transform:
   m_ObjectHideFlags: 0
@@ -9080,6 +9085,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1435548985}
   - component: {fileID: 1435548984}
+  - component: {fileID: 1435548986}
   m_Layer: 0
   m_Name: Drift Correction System
   m_TagString: Untagged
@@ -9114,14 +9120,29 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
+  - {fileID: 1820215479}
   - {fileID: 1471802621}
+  - {fileID: 485312227}
   - {fileID: 422922647}
   - {fileID: 1234970242}
   - {fileID: 1804836659}
-  - {fileID: 1820215479}
-  - {fileID: 485312227}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1435548986
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1435548983}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a70f85297d541d742a58e0e6e8220731, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::XRDisplayConfigurator
+  targetDisplayHz: 90
+  cpuLevel: 4
+  gpuLevel: 4
 --- !u!1 &1443702460
 GameObject:
   m_ObjectHideFlags: 0
