@@ -2932,7 +2932,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ControllerObstaclePlacer
   provider: {fileID: 422922646}
-  obstaclePrefab: {fileID: 3894346489432973563, guid: 98d1477f9650d424388e7803928a75ff, type: 3}
+  obstacle: {fileID: 0}
   hud: {fileID: 247693094}
   verticalOffsetMeters: 0
   levelToFloor: 1
