@@ -45,7 +45,7 @@ function Get-BuildSettings {
 }
 
 function Get-LastBuild {
-    # Reads UserSettings/last-build.json — the latest QuestBuilder run report.
+    # Reads UserSettings/last-build.json - the latest QuestBuilder run report.
     $dir = Find-UserSettingsDir
     if (-not $dir) { return $null }
     $path = Join-Path $dir 'last-build.json'

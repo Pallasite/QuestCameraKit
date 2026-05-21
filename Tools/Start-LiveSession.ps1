@@ -2,14 +2,14 @@
 <#
 .SYNOPSIS
     Stream live logcat from a connected Quest headset into a session file
-    next to the matching APK — the "tethered" alternative to the on-device
+    next to the matching APK - the "tethered" alternative to the on-device
     SessionLogger + Pull-Sessions flow.
 
 .DESCRIPTION
     Default behaviour: installs the newest APK in the output folder, launches
     the app on the headset, resolves its PID, and streams PID-filtered logcat
     to <outputFolder>/<apkBase>.sessions/live_<sessionId>.log with a JSON
-    sidecar. Stop with Ctrl+C — the sidecar gets its sessionEndUtc on the
+    sidecar. Stop with Ctrl+C - the sidecar gets its sessionEndUtc on the
     way out.
 
     Flags:
@@ -101,7 +101,7 @@ if (-not $AttachOnly -and -not $NoLaunch) {
 # ---- Resolve PID -------------------------------------------------------------
 $appPid = (& $adb shell pidof $Package | Out-String).Trim()
 if (-not $appPid) {
-    Write-Warning "Could not resolve PID for $Package — logging all output (noisier)."
+    Write-Warning "Could not resolve PID for $Package - logging all output (noisier)."
 }
 
 # ---- Output paths -------------------------------------------------------------
@@ -117,7 +117,7 @@ New-Item -ItemType Directory -Path $dir -Force | Out-Null
 $logFile     = Join-Path $dir ($sessionId + '.log')
 $sidecarFile = Join-Path $dir ($sessionId + '.json')
 
-# Initial sidecar — overwritten on exit with sessionEndUtc.
+# Initial sidecar - overwritten on exit with sessionEndUtc.
 $sidecar = [PSCustomObject]@{
     sessionId       = $sessionId
     apkBaseName     = $apkBase
@@ -136,7 +136,7 @@ if ($appPid) { $adbArgs += @('--pid', $appPid) }
 
 if ($FromBuffer) {
     Write-Host ""
-    Write-Host "Snapshot mode — capturing current buffer ..."
+    Write-Host "Snapshot mode - capturing current buffer ..."
     & $adb @adbArgs '-d' | Out-File -FilePath $logFile -Encoding utf8
     Update-SidecarOnExit -Sidecar $sidecar -Path $sidecarFile
     Write-Host "Saved: $logFile" -ForegroundColor Green

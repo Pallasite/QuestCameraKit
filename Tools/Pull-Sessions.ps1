@@ -122,7 +122,7 @@ foreach ($log in $logs) {
             Write-Warning "Could not parse sidecar for $($log.Name): $_"
         }
     } else {
-        Write-Warning "$($log.Name) has no sidecar — treating as unmatched."
+        Write-Warning "$($log.Name) has no sidecar - treating as unmatched."
     }
 
     $hasLocalApk = $false
@@ -223,4 +223,4 @@ if ($Cleanup -and -not $DryRun) {
 Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
-Write-Host "Done — pulled $matchedCount matched, $unmatchedCount unmatched session(s)." -ForegroundColor Green
+Write-Host "Done - pulled $matchedCount matched, $unmatchedCount unmatched session(s)." -ForegroundColor Green
