@@ -5,6 +5,12 @@ gait research APK. This document is **self-contained** — you should not need
 to ask the project owner anything to interpret the data. Read the TL;DR
 first; the rest is reference.
 
+**Scope.** This document is for **development analysis** — drift-correction
+quality, build health, runtime diagnostics. The actual kinematic science
+data (gait timing, joint angles, etc.) comes from external sources
+(instrumented gait mat, OptiTrack, etc.) and is intentionally out of scope
+here.
+
 ---
 
 ## TL;DR
@@ -67,15 +73,18 @@ strategies:
   AprilTags anchors an `OVRSpatialAnchor`; per-frame RANSAC + Kabsch on tag
   detections produces a small rigid correction lerped onto a `CorrectionRoot`
   child of the anchor.
-- **Controller-based placement / correction** (in development): uses the
-  rig-mounted Touch controllers' optical+IMU tracking as a high-precision
-  pose reference. In the current build, only a *placer* exists — it spawns
-  an obstacle between the controllers and (on a button press) anchors it
-  to its own dedicated `OVRSpatialAnchor`.
+- **Controller-based placement / correction**: uses the rig-mounted Touch
+  controllers' optical+IMU tracking as a high-precision pose reference.
+  Two components ship: `ControllerObstaclePlacer` (spawns an obstacle
+  between the controllers and anchors it on a button press to its own
+  dedicated `OVRSpatialAnchor`) and `ControllerDriftCorrector` (per-frame
+  gate evaluation, EMA application, snap detection — emits
+  `correction_event`, `snap_event`, and `source_state_change` rows).
 
 The two systems run in parallel and the log captures both anchors' poses
-over time so their drift can be compared offline. The real Phase 2
-correction (gates, EMA, snap detection) is not yet in the data.
+over time so their drift can be compared offline. Phase 2 correction
+(gates, EMA, snap detection) **is now active** — see the `correction_event`
+and `snap_event` sections.
 
 ### Two anchors, tracked in parallel
 
@@ -97,17 +106,54 @@ characterize.
 
 ### File location and pull
 
-On the Quest device:
-```
-/sdcard/Android/data/<package>/files/<participantId>_<unixMs>.csv
-```
-where `<package>` is the Unity build's bundle ID (e.g.
-`com.YourCompany.QuestVisionKit`).
+Each app launch produces a per-session bundle on the Quest device:
 
-Pull to host:
-```bash
-adb pull /sdcard/Android/data/<package>/files/ ./session_logs/
 ```
+/sdcard/Android/data/<package>/files/Sessions/<sessionId>/
+  session.log                          ← Unity Console capture (dev)
+  session.json                         ← dev sidecar with build identity + counters
+  <participantId>_<unixMs>.csv         ← experiment CSV (this document's main subject)
+  apriltag_solver_comparison.csv       ← optional sample CSV (when its component is enabled)
+```
+
+where `<package>` is the Unity build's bundle ID (e.g.
+`com.BlackWhaleStudio.UnityQuestVisionKit`) and `<sessionId>` is
+`yyyy-MM-dd_HHmmss_xxxxxxxx` (UTC stamp + 8 hex chars).
+
+Recommended pull (organizes everything by APK build automatically):
+
+```powershell
+.\Tools\Pull-Sessions.ps1
+```
+
+This pulls each session folder into a matching local
+`<outputFolder>/<apkBase>.sessions/<sessionId>/` next to the APK it came
+from, builds a `sessions-index.json` summary, and optionally mirrors to a
+cloud-synced folder. Sessions whose APK isn't on this machine land in
+`_unmatched_sessions/`. Works over USB or wireless ADB. See the QuestBuild
+plan for full options.
+
+Fallback raw `adb` (loses the per-build attribution):
+
+```bash
+adb pull /sdcard/Android/data/<package>/files/Sessions/ ./session_logs/
+```
+
+### What's in a session folder
+
+Each `<sessionId>/` is one app launch's bundle of outputs. The four common files:
+
+| File | Purpose | Documented in |
+|---|---|---|
+| `<participantId>_<unixMs>.csv` | The experiment CSV (drift, walks, snapshots). Main subject of this document. | This file (the schema below). |
+| `session.log` | Timestamped capture of every Unity `Debug.Log*` line from the launch — info, warning, error, exception with stack trace. | "Dev session log" section below. |
+| `session.json` | Dev sidecar with the build identity baked into the APK + lifecycle counters (errors, exceptions, clean-exit flag). | "Dev session log" section below. |
+| `apriltag_solver_comparison.csv` | Per-frame AprilTag solver comparison rows. Only present if the sample component was enabled this run. | Header in the file itself. |
+
+The experiment CSV is what the rest of this document describes in detail;
+the dev `session.*` files are mostly for diagnosing crashes and tying CSV
+anomalies to specific builds (see "Joining build metadata to CSV analyses"
+below).
 
 ### Format
 
@@ -235,13 +281,24 @@ adb pull /sdcard/Android/data/<package>/files/ ./session_logs/
 | `mean_rot_deg`             | float  | Mean angular deviation from the reference rotation. |
 | `stddev_rot_deg`           | float  | Rotation stddev. |
 
-### Correction events / snap events (Reserved — Phase 2)
+### Correction events / snap events
 
-These columns exist in the schema but are **not emitted by the current
-build**. They will populate when `ControllerDriftCorrector` lands.
+These columns are **actively emitted** as of commit `541c16b`:
 
-| Column                  | Type   | Meaning (when emitted) |
-|-------------------------|--------|------------------------|
+- `correction_source="apriltag"` rows come from `AprilTagCorrectionLogger`
+  (observer on `ConstellationDriftCorrector.OnCorrectionTriggered` /
+  `OnCorrectionRejected`). Populates `accepted`, `rejection_reason` (on
+  reject), `delta_position_m`, `delta_rotation_deg`.
+- `correction_source="controller"` rows come from `ControllerDriftCorrector`'s
+  per-frame gate evaluation + EMA application. Populates the full column
+  set including `ema_alpha_applied`, `correction_applied_m`,
+  `controller_distance_m`, `controller_velocity_mps`.
+- `snap_event` rows come from `ControllerDriftCorrector` when the EMA-snap
+  threshold trips. `context_for` tags the parent snap-event ID on
+  ring-buffer dump rows.
+
+| Column                  | Type   | Meaning |
+|-------------------------|--------|---------|
 | `accepted`              | 0/1    | Did the correction proposal pass all gates? |
 | `rejection_reason`      | string | Gate name that rejected (validity / range / velocity / rigid_body / facing / step_over). |
 | `delta_position_m`      | float  | Magnitude of the proposed correction delta. |
@@ -273,6 +330,9 @@ Sparse lifecycle markers. The `subtype` column distinguishes them.
 | `rigid_body_baseline`       | Once after a successful baseline capture  | `mean_distance_m=...;stddev_distance_m=...;mean_rot_deg=...;stddev_rot_deg=...;distance_tolerance_m=...;rotation_tolerance_deg=...;validation_enforced=...;samples=...` |
 | `reconnect_moved`           | A controller reconnected far from its last-known-good pose | `side=L\|R;moved_m=...;warn_threshold_m=...` |
 | `obstacle_placer_lock`      | The `ControllerObstaclePlacer` lock-toggle fired | `locked=0\|1;anchor=0\|1` |
+| `controller_corrector_activated`   | `ControllerDriftCorrector.Activate()` succeeded — anchor reference captured | varies (write-mode + gate config) |
+| `controller_corrector_deactivated` | `ControllerDriftCorrector.Deactivate()` called    | (empty) |
+| `controller_corrector_recapture`   | `ControllerDriftCorrector.RecaptureReference()` re-anchored | varies (see source) |
 | `synth_load_test_start/end` | If the verification harness was run        | `target_events=...;rate_hz=...` or `emitted=...` |
 
 `correction_source` is always `system` for `session_event`s. `mode` is `n/a`.
@@ -334,15 +394,17 @@ walk produces 2–4 rows depending on whether the obstacle moved / reset:
 
 #### `*battery_sample*` is a `sleep_event` subtype, not its own event_type — listed under `sleep_event` above. Mentioned here because it's easy to miss.
 
-### Reserved (defined in code, not emitted by current build)
+### Reserved (defined in code, not yet emitted)
 
-You will NOT see these in current data. They're stubbed so the schema can
-remain stable when Phase 2 / Phase 3 code lands:
+`correction_event`, `source_state_change`, and `snap_event` were originally
+listed here as Phase 2 reserved — they are **now actively emitted** (see the
+sections above for what populates each column). `correction_source` values
+`controller` and `apriltag` are likewise active.
 
-- `correction_event` — Phase 2 `ControllerDriftCorrector` gate decisions and applied corrections.
-- `source_state_change` — when a correction source enters/leaves its working range.
-- `snap_event` — Phase 2 large-correction event (with a ring-buffer context dump tagged via `context_for`).
+What remains reserved for future code:
+
 - `validation_walk` — Phase 3 periodic re-validation markers.
+- `correction_source = "optitrack"` — future OptiTrack integration.
 
 ---
 
@@ -355,8 +417,8 @@ The `correction_source` column says **which subsystem this row came from**.
 | `system`             | Logger lifecycle, sleep mitigation, trial subscriber | Active |
 | `anchor_baseline`    | `AnchorBaselineLogger` (samples AprilTag anchor) | Active (always on after AprilTag calibration) |
 | `controller_placer`  | `ControllerObstaclePlacer` (samples its dedicated anchor) | Active **only while a placer-anchor lock is held** |
-| `controller`         | Phase 2 `ControllerDriftCorrector`           | **Reserved** — not in current data |
-| `apriltag`           | Phase 2 AprilTag observe-mode adapter        | **Reserved** |
+| `controller`         | `ControllerDriftCorrector`                   | **Active** — emits `correction_event`, `snap_event`, `state_snapshot`, `source_state_change`, and several `session_event` subtypes |
+| `apriltag`           | `AprilTagCorrectionLogger` (observer on `ConstellationDriftCorrector`) | **Active** — emits `correction_event` on accept/reject |
 | `optitrack`          | Future OptiTrack integration                 | **Reserved** |
 
 A correction source going silent (no rows for a stretch) usually means
@@ -556,6 +618,128 @@ dropouts = snap[(snap["position_valid_L"] == 0) | (snap["position_valid_R"] == 0
 print(f"{len(dropouts)} of {len(snap)} snapshots had a validity drop "
       f"({100 * len(dropouts) / max(1, len(snap)):.1f}%)")
 ```
+
+---
+
+## Dev session log (`session.log` + `session.json`)
+
+Each session folder also contains a developer-side capture of the Unity
+Console output and a metadata sidecar. These exist for triaging crashes
+and tying CSV anomalies back to a specific build — they are not part of
+the experiment analysis itself.
+
+### `session.log`
+
+A timestamped text capture of every Unity `Debug.Log*` call from the
+launch — info, warning, error, exception with stack trace. Written by
+`Assets/Scripts/QuestBuild/SessionLogger.cs`.
+
+- Header lines (prefixed with `#`) describe the session: ID, build name +
+  SHA, device, Unity version, UTC start.
+- Body lines are `HH:mm:ss.fff [LogType] message` (UTC). Exception and
+  Error entries also dump the stack trace on the next line(s).
+
+### `session.json`
+
+JSON sidecar with the build identity baked into the APK at build time +
+lifecycle counters maintained by the logger:
+
+| Field | Meaning |
+|---|---|
+| `sessionId` | Same as the folder name. |
+| `apkBaseName` | The APK filename minus `.apk` — the build this session ran on. |
+| `packageName` | Android application id. |
+| `gitSha`, `gitBranch`, `dirty` | Repo state at the moment the APK was built. |
+| `bundleVersion` | `Application.version` of the APK. |
+| `buildTimestampUtc` | When the APK was built. |
+| `sessionStartUtc` | UTC moment the logger initialised. |
+| `sessionLastSeenUtc` | Heartbeat (~30s); approximates "still alive at" if the session ended without a clean quit. |
+| `sessionEndUtc` | UTC of `Application.quitting` if it fired; empty string otherwise. |
+| `cleanExit` | `true` only if `Application.quitting` fired (rare on Quest — usually false). |
+| `durationSec` | End - start (or last-seen - start if no clean exit). |
+| `unityVersion`, `deviceModel`, `osVersion` | Runtime environment. |
+| `lineCount`, `warningCount`, `errorCount`, `exceptionCount` | Tallies over the whole session. |
+
+### Triaging crashes
+
+A session that died abruptly has `cleanExit:false` and `sessionEndUtc:""`. In that case:
+
+1. Check `exceptionCount` and `errorCount` — non-zero means look at the
+   tail of `session.log` for stack traces near `sessionLastSeenUtc`.
+2. Cross-reference with the CSV's last `timestamp_session` row — if it's
+   close to `sessionLastSeenUtc` (mapped via `session_start.detail.unix_ms`),
+   the CSV stopped at roughly the moment the app died.
+
+A clean quit leaves `cleanExit:true` (rare on Quest because the OS
+suspends rather than quits) **or** the session simply ends when the user
+puts the headset down. The latter looks the same as a crash in the
+sidecar — the absence of exceptions in `session.log` is the actual
+"clean-ish" signal.
+
+---
+
+## Joining build metadata to CSV analyses
+
+Because `session.json` lives next to the experiment CSV, you can group
+sessions by build identity to ask questions like "did this regression
+appear after commit X?" or "do dirty builds drift more?".
+
+```python
+import json
+from pathlib import Path
+import pandas as pd
+
+def load_session(folder: Path):
+    """Return (csv DataFrame, sidecar dict) for one session folder."""
+    sidecar = json.loads((folder / "session.json").read_text())
+    csv_files = list(folder.glob("P*_*.csv"))   # participant CSV
+    if not csv_files:
+        return None, sidecar
+    df = pd.read_csv(csv_files[0], low_memory=False)
+    return df, sidecar
+
+# Walk every session inside one APK's pulled folder
+sessions_root = Path("C:/_G/Builds/QuestCameraKit/April Tag/Managed_Builds/"
+                     "QVK-ControllerPair_0.1.0_2026-05-18_2117_59ca7a6-dirty_dev.sessions")
+rows = []
+for folder in sorted(sessions_root.iterdir()):
+    if not folder.is_dir() or folder.name.startswith("_"):
+        continue
+    df, meta = load_session(folder)
+    if df is None:
+        continue
+    rows.append({
+        "session": folder.name,
+        "gitSha": meta["gitSha"],
+        "dirty": meta["dirty"],
+        "bundleVersion": meta["bundleVersion"],
+        "rows": len(df),
+        "exceptions": meta["exceptionCount"],
+        "errors": meta["errorCount"],
+        "duration_s": meta["durationSec"],
+    })
+
+summary = pd.DataFrame(rows)
+print(summary)
+print("by SHA:\n",
+      summary.groupby("gitSha")[["rows", "exceptions", "errors"]].sum())
+```
+
+### Mapping `session.log` timestamps to CSV `timestamp_session`
+
+The CSV uses session-relative seconds (`timestamp_session`); `session.log`
+uses UTC `HH:mm:ss.fff`. To align them:
+
+1. From the CSV: `session_start_unix_ms = int(detail["unix_ms"])` (see
+   "Parsing the session header" above).
+2. From `session.json`: `session_start_utc = sidecar["sessionStartUtc"]`.
+3. These should agree within a few ms — both record the same launch
+   moment. Pick either as your t=0 reference.
+4. For any log line at `HH:mm:ss.fff` (UTC), compute
+   `(log_utc - session_start_utc).total_seconds()` to get the matching
+   `timestamp_session`. Filter CSV rows by
+   `(df["timestamp_session"] - X).abs() < window` to find what was
+   happening in the experiment when that log line fired.
 
 ---
 

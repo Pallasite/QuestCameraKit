@@ -107,15 +107,17 @@ if (-not $appPid) {
 # ---- Output paths -------------------------------------------------------------
 $sessionStamp = Get-Date -Format 'yyyy-MM-dd_HHmmss'
 $sessionId    = "live_$sessionStamp"
-$dir = if ($apkBase) {
+$baseDir = if ($apkBase) {
     Join-Path $OutputFolder ($apkBase + '.sessions')
 } else {
     Join-Path $OutputFolder '_live_sessions'
 }
-New-Item -ItemType Directory -Path $dir -Force | Out-Null
+# Per-session subfolder, matching the on-device layout (every session is its own dir).
+$sessionFolder = Join-Path $baseDir $sessionId
+New-Item -ItemType Directory -Path $sessionFolder -Force | Out-Null
 
-$logFile     = Join-Path $dir ($sessionId + '.log')
-$sidecarFile = Join-Path $dir ($sessionId + '.json')
+$logFile     = Join-Path $sessionFolder 'session.log'
+$sidecarFile = Join-Path $sessionFolder 'session.json'
 
 # Initial sidecar - overwritten on exit with sessionEndUtc.
 $sidecar = [PSCustomObject]@{

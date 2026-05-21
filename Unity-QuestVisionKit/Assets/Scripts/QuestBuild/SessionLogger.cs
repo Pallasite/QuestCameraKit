@@ -74,15 +74,15 @@ namespace QuestBuild
 
         void Initialize()
         {
-            var dir = Path.Combine(Application.persistentDataPath, "Sessions");
-            Directory.CreateDirectory(dir);
-
             var build = BuildInfo.Load();
             _startUtc = DateTime.UtcNow;
-            var sessionId = $"{_startUtc:yyyy-MM-dd_HHmmss}_{Guid.NewGuid().ToString("N").Substring(0, 8)}";
+            // SessionPaths owns the per-launch folder and id; every writer that
+            // produces session artefacts (this dev log, the experiment CSV, sample
+            // CSVs) lands inside the same folder. Filenames inside are semantic.
+            var sessionId = SessionPaths.SessionId;
 
-            _logPath = Path.Combine(dir, sessionId + ".log");
-            _sidecarPath = Path.Combine(dir, sessionId + ".json");
+            _logPath = SessionPaths.Combine("session.log");
+            _sidecarPath = SessionPaths.Combine("session.json");
 
             _sidecar = new SessionSidecar
             {
@@ -115,7 +115,7 @@ namespace QuestBuild
             Application.logMessageReceivedThreaded += OnLog;
             Application.quitting += OnQuitting;
 
-            RollOldSessions(dir, Math.Max(1, build.maxSessionsRetainedOnDevice));
+            RollOldSessions(SessionPaths.SessionsRoot, Math.Max(1, build.maxSessionsRetainedOnDevice));
         }
 
         void WriteHeader(BuildInfo build)
@@ -244,17 +244,31 @@ namespace QuestBuild
             catch { /* swallow */ }
         }
 
-        static void RollOldSessions(string dir, int keep)
+        static void RollOldSessions(string sessionsRoot, int keep)
         {
             try
             {
-                var info = new DirectoryInfo(dir);
+                var info = new DirectoryInfo(sessionsRoot);
                 if (!info.Exists) return;
-                var logs = info.GetFiles("*.log")
+
+                // New layout: each immediate subdir is one session bundle. Keep
+                // the newest `keep` by mtime; delete the rest recursively.
+                var oldDirs = info.GetDirectories()
+                    .OrderByDescending(d => d.LastWriteTimeUtc)
+                    .Skip(keep)
+                    .ToList();
+                foreach (var d in oldDirs)
+                {
+                    try { d.Delete(recursive: true); } catch { }
+                }
+
+                // Legacy cleanup: flat <id>.log + <id>.json pairs at the root from
+                // earlier Phase 2 builds (pre-folder layout). Trim by the same cap.
+                var orphanLogs = info.GetFiles("*.log")
                     .OrderByDescending(f => f.LastWriteTimeUtc)
                     .Skip(keep)
                     .ToList();
-                foreach (var log in logs)
+                foreach (var log in orphanLogs)
                 {
                     var sidecar = Path.ChangeExtension(log.FullName, ".json");
                     try { log.Delete(); } catch { }

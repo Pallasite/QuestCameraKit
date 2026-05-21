@@ -311,8 +311,10 @@ namespace QuestBuild
             if (dir == null || !Directory.Exists(dir)) return null;
             try
             {
+                // Search recursively so we catch both the new layout
+                // (<sessionId>/session.log) and legacy flat <id>.log files.
                 var info = new DirectoryInfo(dir);
-                var newest = info.GetFiles("*.log")
+                var newest = info.GetFiles("*.log", SearchOption.AllDirectories)
                     .OrderByDescending(f => f.LastWriteTimeUtc)
                     .FirstOrDefault();
                 return newest?.FullName;

@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using QuestBuild;
 using UnityEngine;
 
 /// <summary>
@@ -26,8 +27,9 @@ public class AprilTagSolverComparisonLogger : MonoBehaviour
              "Falls back to GetComponent<AprilTagDisplayManager>() if not assigned.")]
     [SerializeField] private AprilTagDisplayManager displayManager;
 
-    [Tooltip("CSV file name written under Application.persistentDataPath. " +
-             "On Quest, pull with: adb pull /sdcard/Android/data/<package>/files/<fileName>")]
+    [Tooltip("CSV file name written into the per-launch session folder " +
+             "(persistentDataPath/Sessions/<sessionId>/<fileName>). Pull via " +
+             "Tools/Pull-Sessions.ps1 or adb pull /sdcard/Android/data/<package>/files/Sessions/")]
     [SerializeField] private string fileName = "apriltag_solver_comparison.csv";
 
     [Tooltip("Disables logging without removing the component. Useful for " +
@@ -65,7 +67,9 @@ public class AprilTagSolverComparisonLogger : MonoBehaviour
 
         try
         {
-            _resolvedPath = Path.Combine(Application.persistentDataPath, fileName);
+            // Route through SessionPaths so the sample CSV lands inside the same
+            // per-launch session folder as the dev log + experiment CSV.
+            _resolvedPath = SessionPaths.Combine(fileName);
             bool isNew = !File.Exists(_resolvedPath) || new FileInfo(_resolvedPath).Length == 0;
             _writer = new StreamWriter(_resolvedPath, append: true, Encoding.UTF8);
             if (isNew)

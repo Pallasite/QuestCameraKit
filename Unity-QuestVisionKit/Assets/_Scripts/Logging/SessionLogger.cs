@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Threading;
+using QuestBuild;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -100,7 +101,9 @@ public sealed class SessionLogger : MonoBehaviour
         {
             var unixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var fileName = $"{SanitizeForFilename(participantId)}_{unixMs}.csv";
-            _resolvedPath = Path.Combine(Application.persistentDataPath, fileName);
+            // Route through SessionPaths so the CSV lands inside the per-launch
+            // session folder alongside the dev log + any sample CSVs from this run.
+            _resolvedPath = SessionPaths.Combine(fileName);
             _sessionStartTime = Time.realtimeSinceStartupAsDouble;
             _running = true;
             _writerThread = new Thread(WriterLoop) { IsBackground = true, Name = "SessionLoggerWriter" };
