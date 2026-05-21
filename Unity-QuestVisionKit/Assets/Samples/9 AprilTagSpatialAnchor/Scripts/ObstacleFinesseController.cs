@@ -2,20 +2,24 @@ using UnityEngine;
 
 /// <summary>
 /// Controller-driven port of the FinesseTouch UI panel from the Kines-Perturb
-/// experiment. Nudges the obstacle's local pose (cm/mm translation, deg/0.1°
-/// rotation) relative to its parent <see cref="ConstellationDriftCorrector.CorrectionRoot"/>,
-/// so the experimenter can fine-tune placement against the AprilTag
-/// constellation without having to touch a UI in the headset.
+/// experiment. Nudges the active obstacle's local pose (cm/mm translation,
+/// deg/0.1° rotation) relative to whatever <c>CorrectionRoot</c> parents it,
+/// so the experimenter can fine-tune placement without touching a UI in the
+/// headset. The active obstacle is one of three independent correction
+/// systems (AprilTag / controller-placer / controller-corrector), runtime-
+/// switchable via the toggle button.
 ///
 /// Input handling is delegated to <see cref="QuestControllerInput"/> — this
 /// class is the policy layer that maps semantic input events to obstacle
 /// transforms and the calibrate trigger.
 ///
 /// IMPORTANT: this writes <c>obstacle.transform.localPosition/localRotation</c>,
-/// not CorrectionRoot's. The drift corrector overwrites CorrectionRoot every
-/// Update() while lerping, but it preserves the obstacle's local pose across
-/// recalibration (see <see cref="ConstellationDriftCorrector.Calibrate"/>),
-/// which is exactly the offset surface FinesseTouch was tuning.
+/// not the parent CorrectionRoot's. The active correction system overwrites
+/// its CorrectionRoot every frame, but the obstacle's local pose under it (the
+/// finesse offset) is preserved across correction updates — that's exactly the
+/// offset surface FinesseTouch was tuning. Each of the three targets keeps its
+/// own independent finesse offset on its own obstacle Transform, so switching
+/// the active target doesn't reset the others.
 ///
 /// Control scheme (Quest 3 controllers):
 ///   L thumbstick X  → nudge local +X / -X    (right / left)
@@ -29,17 +33,19 @@ using UnityEngine;
 ///   Right HandTrigger + A → batch calibrate constellation (one-shot ScanCalibrationAsync)
 ///   Right HandTrigger + B → toggle streaming calibration sweep (Begin if idle, Commit if sweeping)
 ///   Right HandTrigger + R thumbstick click → cancel an in-progress streaming sweep
-///   L thumbstick click → toggle finesse target (AprilTag obstacle ↔ controller-placer obstacle)
+///   L thumbstick click → cycle finesse target (AprilTag → Placer → Controller → AprilTag …)
 /// </summary>
 public class ObstacleFinesseController : MonoBehaviour
 {
     /// <summary>Which obstacle the finesse bindings currently nudge.</summary>
     public enum FinesseTarget
     {
-        /// <summary>The AprilTag-anchored obstacle (ConstellationDriftCorrector.Obstacle).</summary>
+        /// <summary>The AprilTag-anchored obstacle (<see cref="ConstellationDriftCorrector.Obstacle"/>).</summary>
         AprilTag,
-        /// <summary>The controller-placer's spawned obstacle (ControllerObstaclePlacer.SpawnedObstacle).</summary>
-        Placer
+        /// <summary>The controller-placer's spawned obstacle (<see cref="ControllerObstaclePlacer.SpawnedObstacle"/>).</summary>
+        Placer,
+        /// <summary>The controller-corrector's spawned obstacle (<see cref="ControllerDriftCorrector.SpawnedObstacle"/>).</summary>
+        Controller,
     }
 
     [Header("Wiring")]
@@ -51,7 +57,10 @@ public class ObstacleFinesseController : MonoBehaviour
     [Tooltip("Reference to the controller-placer; auto-resolved if empty. Required when activeTarget = Placer.")]
     [SerializeField] private ControllerObstaclePlacer placer;
 
-    [Tooltip("Manual override. If set, this transform is nudged directly and both corrector / placer are ignored.")]
+    [Tooltip("Reference to the controller-drift-corrector; auto-resolved if empty. Required when activeTarget = Controller.")]
+    [SerializeField] private ControllerDriftCorrector driftCorrector;
+
+    [Tooltip("Manual override. If set, this transform is nudged directly and corrector / placer / driftCorrector are ignored.")]
     [SerializeField] private Transform manualTarget;
 
     [Header("Target")]
@@ -86,6 +95,8 @@ public class ObstacleFinesseController : MonoBehaviour
                     return (corrector && corrector.Obstacle) ? corrector.Obstacle.transform : null;
                 case FinesseTarget.Placer:
                     return (placer != null) ? placer.SpawnedObstacle : null;
+                case FinesseTarget.Controller:
+                    return (driftCorrector != null) ? driftCorrector.SpawnedObstacle : null;
             }
             return null;
         }
@@ -111,10 +122,12 @@ public class ObstacleFinesseController : MonoBehaviour
         {
             Debug.LogWarning("[FinesseController] No ConstellationDriftCorrector or manual target assigned. Assign one in the Inspector.");
         }
-        // Auto-resolve the placer and HUD for the runtime target-switch flow.
-        // The placer is only required when activeTarget = Placer; the HUD is
-        // optional (haptic + Debug.Log still give feedback if it's missing).
+        // Auto-resolve the placer, drift corrector, and HUD for the runtime
+        // target-switch flow. Each non-AprilTag corrector is only required when
+        // its corresponding target is active; the HUD is optional (haptic +
+        // Debug.Log still give feedback if it's missing).
         if (!placer) placer = FindAnyObjectByType<ControllerObstaclePlacer>();
+        if (!driftCorrector) driftCorrector = FindAnyObjectByType<ControllerDriftCorrector>();
         if (!_hud) _hud = FindAnyObjectByType<PipelineStatusHUD>();
     }
 
@@ -316,18 +329,24 @@ public class ObstacleFinesseController : MonoBehaviour
     }
 
     /// <summary>
-    /// Toggle which obstacle the finesse bindings drive: AprilTag (the
-    /// ConstellationDriftCorrector's obstacle) or Placer (the
-    /// ControllerObstaclePlacer's spawned obstacle). Both retain their
-    /// independent local offsets across switches — the offsets live on
-    /// each obstacle's <c>transform.localPose</c>, not on this controller.
+    /// Cycle which obstacle the finesse bindings drive, in order:
+    /// AprilTag (the <see cref="ConstellationDriftCorrector"/>'s obstacle) →
+    /// Placer (the <see cref="ControllerObstaclePlacer"/>'s spawned obstacle) →
+    /// Controller (the <see cref="ControllerDriftCorrector"/>'s spawned obstacle) →
+    /// back to AprilTag. All three retain their independent local offsets
+    /// across switches — the offsets live on each obstacle's
+    /// <c>transform.localPose</c>, not on this controller.
     /// </summary>
     [ContextMenu("Toggle Finesse Target")]
     public void ToggleActiveTarget()
     {
-        activeTarget = activeTarget == FinesseTarget.AprilTag
-            ? FinesseTarget.Placer
-            : FinesseTarget.AprilTag;
+        activeTarget = activeTarget switch
+        {
+            FinesseTarget.AprilTag => FinesseTarget.Placer,
+            FinesseTarget.Placer => FinesseTarget.Controller,
+            FinesseTarget.Controller => FinesseTarget.AprilTag,
+            _ => FinesseTarget.AprilTag,
+        };
 
         // Tactile + visual confirmation. Double-pulse both controllers so the
         // gesture is distinct from a normal nudge.

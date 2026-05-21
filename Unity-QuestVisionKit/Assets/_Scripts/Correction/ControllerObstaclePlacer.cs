@@ -280,7 +280,7 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
             "<b>Drift Correction — Controls</b>\n" +
             "L index trigger : lock / unlock obstacle (creates/destroys anchor)\n" +
             "R index trigger : show this\n" +
-            "L thumbstick click : switch finesse target (AprilTag ↔ Placer)\n" +
+            "L thumbstick click : cycle finesse target (AprilTag → Placer → Controller → …)\n" +
             "<b>Status</b>\n" +
             $"Locked: {(IsLocked ? "yes" : "no")} · Spawned: {yesNoSpawn} · Anchor: {yesNoAnchor}\n" +
             $"L valid: {yesNoL} · R valid: {yesNoR} · Finesse: {finesseTarget}\n" +

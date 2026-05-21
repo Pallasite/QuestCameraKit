@@ -8187,6 +8187,70 @@ MonoBehaviour:
   installationRoutineCheckpoint:
     _installationRoutineId: 
     _installationVariants: []
+--- !u!1 &1249986393
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1249986394}
+  - component: {fileID: 1249986395}
+  m_Layer: 0
+  m_Name: ControllerDriftCorrector
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1249986394
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1249986393}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1435548985}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1249986395
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1249986393}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e054fcf1277b88c4d9297c7db57a0b55, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ControllerDriftCorrector
+  provider: {fileID: 422922646}
+  rigidBodyValidator: {fileID: 1804836658}
+  obstaclePrefab: {fileID: 5657905823707497161, guid: a6a4e5226869d1d4cb4228e0eaa0a0dd, type: 3}
+  hud: {fileID: 0}
+  headsetCamera: {fileID: 0}
+  verticalOffsetMeters: 0
+  rotationOffsetEuler: {x: 0, y: 0, z: 0}
+  workingRangeMeters: 2
+  maxVelocityMps: 0.02
+  stepOverZoneMeters: 0.3
+  emaAlpha: 0.05
+  snapThresholdMeters: 0.015
+  snapThresholdDegrees: 10
+  maxCorrectionRateMps: 0.05
+  maxCorrectionRateDegPerSec: 5
+  autoActivate: 1
+  startWriteMode: 1
+  startCorrectionEnabled: 1
+  startEnabledGates: -1
+  anchorSnapshotRateHz: 5
 --- !u!1 &1265572076
 GameObject:
   m_ObjectHideFlags: 0
@@ -9126,6 +9190,7 @@ Transform:
   - {fileID: 422922647}
   - {fileID: 1234970242}
   - {fileID: 1804836659}
+  - {fileID: 1249986394}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &1435548986
