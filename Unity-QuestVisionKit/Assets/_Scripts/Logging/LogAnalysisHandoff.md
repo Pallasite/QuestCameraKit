@@ -11,6 +11,11 @@ data (gait timing, joint angles, etc.) comes from external sources
 (instrumented gait mat, OptiTrack, etc.) and is intentionally out of scope
 here.
 
+**Maintaining this document.** Whenever the code changes what is logged, how
+it is logged, or where it is written, update this document in the same commit.
+The schema below is the contract with downstream analysis; doc drift is silent
+breakage. (Same rule lives in the repo-root `CLAUDE.md`.)
+
 ---
 
 ## TL;DR
@@ -141,19 +146,26 @@ adb pull /sdcard/Android/data/<package>/files/Sessions/ ./session_logs/
 
 ### What's in a session folder
 
-Each `<sessionId>/` is one app launch's bundle of outputs. The four common files:
+Each `<sessionId>/` is one app launch's bundle of outputs:
 
-| File | Purpose | Documented in |
-|---|---|---|
-| `<participantId>_<unixMs>.csv` | The experiment CSV (drift, walks, snapshots). Main subject of this document. | This file (the schema below). |
-| `session.log` | Timestamped capture of every Unity `Debug.Log*` line from the launch — info, warning, error, exception with stack trace. | "Dev session log" section below. |
-| `session.json` | Dev sidecar with the build identity baked into the APK + lifecycle counters (errors, exceptions, clean-exit flag). | "Dev session log" section below. |
-| `apriltag_solver_comparison.csv` | Per-frame AprilTag solver comparison rows. Only present if the sample component was enabled this run. | Header in the file itself. |
+| File | Purpose | Present in | Documented in |
+|---|---|---|---|
+| `<participantId>_<unixMs>.csv` | The wide experiment CSV (drift, walks, snapshots). Main subject of this document. | All builds | This file (the schema below). |
+| `session.log` | Timestamped capture of every Unity `Debug.Log*` line from the launch — info, warning, error, exception with stack trace. | All builds | "Dev session log" section below. |
+| `session.json` | Dev sidecar with the build identity baked into the APK + lifecycle counters (errors, exceptions, clean-exit flag). | All builds | "Dev session log" section below. |
+| `reference_anchors.csv` | Pose of N reference `OVRSpatialAnchor`s (center + corners) over time — drift-uniformity probe. | **Dev builds only** | "Reference anchors" section below. |
+| `tracking_events.csv` | Sparse rows on head / controller / user-presence state transitions. | **Dev builds only** | "Tracking events" section below. |
+| `headset_poses.csv` | Per-frame headset world pose + linear/angular velocity. Large (~30–50 MB / 45 min). | **Dev builds only** | "High-frequency pose + jitter stats" section below. |
+| `headset_pose_stats.csv` | 1 Hz rolling-window RMS jitter (translation mm, rotation deg) computed on device. | **Dev builds only** | "High-frequency pose + jitter stats" section below. |
+| `controller_poses.csv` | Per-frame L+R controller poses + validity. | **Dev builds only** | "High-frequency pose + jitter stats" section below. |
+| `controller_pose_stats.csv` | 1 Hz rolling-window RMS jitter per controller. | **Dev builds only** | "High-frequency pose + jitter stats" section below. |
+| `apriltag_solver_comparison.csv` | Per-frame AprilTag solver comparison rows. | Only when the sample is enabled this run | Header in the file itself. |
 
-The experiment CSV is what the rest of this document describes in detail;
-the dev `session.*` files are mostly for diagnosing crashes and tying CSV
-anomalies to specific builds (see "Joining build metadata to CSV analyses"
-below).
+The experiment CSV is what the rest of this document describes in detail; the
+dev `session.*` files are mostly for diagnosing crashes and tying CSV anomalies
+to specific builds (see "Joining build metadata to CSV analyses" below). The
+dev-only CSVs above ship in development builds only — their **absence** in a
+session folder is the signal that the session ran on a production build.
 
 ### Format
 
@@ -740,6 +752,161 @@ uses UTC `HH:mm:ss.fff`. To align them:
    `timestamp_session`. Filter CSV rows by
    `(df["timestamp_session"] - X).abs() < window` to find what was
    happening in the experiment when that log line fired.
+
+---
+
+## Reference anchors (`reference_anchors.csv`) — dev only
+
+**Why it's there.** Beyond the AprilTag-calibrated anchor and the controller-placer
+anchor, the dev build can spawn an array of `OVRSpatialAnchor`s at configured
+offsets from the AprilTag root (default: 1 center + 4 corners at ±2 m). Each is
+tracked independently by Meta's runtime, so per-anchor bundle-adjustment events
+show up as divergence between their pose traces — if all anchors jump together,
+that's a uniform space re-localisation; if one anchor moves while the others
+don't, that's a per-anchor adjustment.
+
+Written by `Assets/_Scripts/Logging/ReferenceAnchorLogger.cs`.
+
+**Schema.** `unix_ms, timestamp_session, frame, anchor_id, anchor_label,
+pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, rot_w, is_localized, tracking_state`.
+One row per anchor per ~5 Hz sample (configurable).
+
+**Typical analysis** (drift-uniformity probe):
+
+```python
+import pandas as pd
+import matplotlib.pyplot as plt
+
+df = pd.read_csv("reference_anchors.csv")
+fig, axes = plt.subplots(3, 1, sharex=True, figsize=(10, 6))
+for label, g in df.groupby("anchor_label"):
+    g = g.sort_values("timestamp_session")
+    for ax, col in zip(axes, ["pos_x", "pos_y", "pos_z"]):
+        ax.plot(g["timestamp_session"], g[col], label=label)
+for ax, col in zip(axes, ["pos_x", "pos_y", "pos_z"]):
+    ax.set_ylabel(col); ax.legend(fontsize="x-small")
+axes[-1].set_xlabel("timestamp_session (s)")
+plt.suptitle("Reference anchor poses over session")
+```
+
+Synchronised jumps across all labels → uniform re-localisation. Independent
+jumps → per-anchor bundle adjustment.
+
+---
+
+## Tracking events (`tracking_events.csv`) — dev only
+
+**Why it's there.** Drift spikes and CSV anomalies often line up with SLAM
+tracking transitions (boundary cross, headset lift, controller drop). This
+file emits a row only when state changes, so it's tiny and easy to overlay
+on the main CSV's time axis.
+
+Written by `Assets/_Scripts/Logging/TrackingEventsLogger.cs`.
+
+**Schema.** `unix_ms, timestamp_session, frame, event, state_from, state_to,
+detail`.
+
+Events emitted:
+
+| `event`                          | Meaning |
+|----------------------------------|---------|
+| `tracking_baseline`              | First-frame snapshot — `detail` carries the initial state of every tracked flag. |
+| `head_tracking_lost` / `_recovered` | `OVRPlugin.GetNodePoseStateValid(Head)` flipped. |
+| `controller_L_pose_invalid` / `_valid` | `OVRInput.GetControllerPositionValid(LTouch)` flipped. |
+| `controller_R_pose_invalid` / `_valid` | Same, right hand. |
+| `controller_L_connected` / `_disconnected` | `OVRInput.IsControllerConnected(LTouch)` flipped. |
+| `controller_R_connected` / `_disconnected` | Same, right hand. |
+| `user_present` / `user_absent`   | `OVRPlugin.userPresent` flipped (headset on/off head). |
+
+**Typical use.** Merge into the experiment CSV by nearest `timestamp_session`
+and annotate drift spikes that fall within a few hundred ms of a
+`*_tracking_lost` event as "probably real, not an algorithmic failure":
+
+```python
+events = pd.read_csv("tracking_events.csv").sort_values("timestamp_session")
+df = df.sort_values("timestamp_session")
+df["nearest_tracking_event"] = pd.merge_asof(
+    df[["timestamp_session"]], events[["timestamp_session", "event"]],
+    on="timestamp_session", direction="nearest", tolerance=0.5)["event"]
+```
+
+---
+
+## High-frequency pose + jitter stats — dev only
+
+Four files, all gated to development builds:
+
+- `headset_poses.csv` — per-frame headset world pose + velocity.
+- `headset_pose_stats.csv` — 1 Hz rolling RMS jitter (window default 1 s).
+- `controller_poses.csv` — per-frame L+R poses + validity.
+- `controller_pose_stats.csv` — 1 Hz rolling RMS jitter per controller.
+
+Written by `Assets/_Scripts/Logging/HeadsetPoseLogger.cs` and
+`ControllerPoseLogger.cs`. Both share the `unix_ms, timestamp_session, frame`
+prefix and use invariant-culture floats in "R" format.
+
+### Schemas
+
+```
+headset_poses.csv
+  unix_ms, timestamp_session, frame,
+  pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, rot_w,
+  linvel_mps, angvel_dps
+
+headset_pose_stats.csv
+  unix_ms, timestamp_session, window_sec, sample_count,
+  pos_jitter_rms_mm, rot_jitter_rms_deg
+
+controller_poses.csv
+  unix_ms, timestamp_session, frame,
+  side,                          (L | R)
+  pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, rot_w,
+  position_valid, orientation_valid,
+  linvel_mps, angvel_dps
+
+controller_pose_stats.csv
+  unix_ms, timestamp_session, side, window_sec, sample_count,
+  pos_jitter_rms_mm, rot_jitter_rms_deg
+```
+
+`linvel_mps` and `angvel_dps` are frame-to-frame deltas (position distance /
+`Time.unscaledDeltaTime`; `Quaternion.Angle` / `dt`). The `*_jitter_rms_*`
+columns are RMS of consecutive deltas over the window — high-frequency jitter,
+not drift.
+
+### Typical analysis
+
+Quick at-a-glance controller jitter timeline (uses the cheap stats stream):
+
+```python
+import pandas as pd
+import matplotlib.pyplot as plt
+
+stats = pd.read_csv("controller_pose_stats.csv")
+for side, g in stats.groupby("side"):
+    plt.plot(g["timestamp_session"], g["pos_jitter_rms_mm"],
+             label=f"controller {side} pos RMS (mm)")
+plt.legend(); plt.xlabel("timestamp_session (s)"); plt.ylabel("RMS mm")
+plt.title("Controller positional jitter (1 s window)")
+```
+
+Full offline analysis straight off the raw stream (any window, any metric):
+
+```python
+poses = pd.read_csv("controller_poses.csv")
+L = poses[poses["side"] == "L"].sort_values("timestamp_session").reset_index(drop=True)
+L["d_pos_mm"] = (L[["pos_x","pos_y","pos_z"]].diff().pow(2)
+                 .sum(axis=1).pow(0.5) * 1000)
+print(L["d_pos_mm"].describe())
+```
+
+### Production gating
+
+All six dev-only files (`reference_anchors.csv`, `tracking_events.csv`, the
+four high-freq pose / stats files) are **absent** from `Sessions/<sessionId>/`
+in non-development builds — their loggers self-gate on `Debug.isDebugBuild`.
+Their presence is the indicator of whether high-freq capture was on for that
+session.
 
 ---
 
