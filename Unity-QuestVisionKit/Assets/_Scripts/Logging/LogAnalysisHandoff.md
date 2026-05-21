@@ -811,7 +811,7 @@ Events emitted:
 | `event`                          | Meaning |
 |----------------------------------|---------|
 | `tracking_baseline`              | First-frame snapshot — `detail` carries the initial state of every tracked flag. |
-| `head_tracking_lost` / `_recovered` | `OVRPlugin.GetNodePoseStateValid(Head)` flipped. |
+| `head_tracking_lost` / `_recovered` | `OVRPlugin.GetNodePositionTracked(Head)` flipped (stricter than `*Valid` - excludes dead-reckoned poses). |
 | `controller_L_pose_invalid` / `_valid` | `OVRInput.GetControllerPositionValid(LTouch)` flipped. |
 | `controller_R_pose_invalid` / `_valid` | Same, right hand. |
 | `controller_L_connected` / `_disconnected` | `OVRInput.IsControllerConnected(LTouch)` flipped. |

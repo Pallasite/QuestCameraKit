@@ -87,7 +87,7 @@ public sealed class TrackingEventsLogger : MonoBehaviour
     {
         if (_writer == null) return;
 
-        bool head = SafeNodeValid(OVRPlugin.Node.Head, defaultValue: true);
+        bool head = SafeNodeTracked(OVRPlugin.Node.Head, defaultValue: true);
         bool ctrlLValid = OVRInput.GetControllerPositionValid(OVRInput.Controller.LTouch);
         bool ctrlRValid = OVRInput.GetControllerPositionValid(OVRInput.Controller.RTouch);
         bool ctrlLConn  = OVRInput.IsControllerConnected(OVRInput.Controller.LTouch);
@@ -181,9 +181,12 @@ public sealed class TrackingEventsLogger : MonoBehaviour
 
     private static string B(bool v) => v ? "1" : "0";
 
-    private static bool SafeNodeValid(OVRPlugin.Node node, bool defaultValue)
+    // Uses GetNodePositionTracked rather than the looser GetNodePositionValid - the
+    // latter returns true even for extrapolated (dead-reckoned) poses, so it would
+    // miss the very "tracking lost" transitions we're trying to capture here.
+    private static bool SafeNodeTracked(OVRPlugin.Node node, bool defaultValue)
     {
-        try { return OVRPlugin.GetNodePoseStateValid(node); }
+        try { return OVRPlugin.GetNodePositionTracked(node); }
         catch { return defaultValue; }
     }
 
