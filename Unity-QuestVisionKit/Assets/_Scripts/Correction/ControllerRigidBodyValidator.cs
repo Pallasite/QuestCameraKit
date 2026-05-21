@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -56,6 +57,16 @@ public sealed class ControllerRigidBodyValidator : MonoBehaviour
     public float CurrentDeviationFromBaselineDeg { get; private set; }
     public bool CurrentInTolerance { get; private set; } = true;
     public bool ValidationEnforced => useRigidBodyValidation;
+
+    /// <summary>
+    /// Fired at the end of a successful <see cref="CaptureBaselineCoroutine"/> run,
+    /// after <see cref="HasBaseline"/> flips true and the calibration_event /
+    /// session_event rows are enqueued. <see cref="ControllerDriftCorrector"/>
+    /// (and the future mode coordinator) subscribe to this to re-capture their
+    /// own references — when the rig is recalibrated, the controllers physically
+    /// moved and any previously-captured midpoint reference is stale.
+    /// </summary>
+    public event Action OnBaselineCaptured;
 
     private bool _capturing;
 
@@ -193,6 +204,12 @@ public sealed class ControllerRigidBodyValidator : MonoBehaviour
 
             Debug.Log($"[ControllerRigidBodyValidator] Baseline: distance {dMean * 100f:F2}cm " +
                       $"(sd {dStddev * 1000f:F2}mm), rotation spread {rStddev:F3}deg over {distances.Count} samples.");
+
+            // Fire after HasBaseline is true and logging is enqueued, so subscribers
+            // see a fully-published baseline. Wrapped in try/catch so a misbehaving
+            // listener can't roll back the capture.
+            try { OnBaselineCaptured?.Invoke(); }
+            catch (Exception ex) { Debug.LogError($"[ControllerRigidBodyValidator] OnBaselineCaptured listener threw: {ex}"); }
         }
         finally
         {
