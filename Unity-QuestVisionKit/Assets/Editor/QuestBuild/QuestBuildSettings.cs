@@ -17,6 +17,11 @@ namespace QuestBuild
         public bool connectProfiler = false;
         public string fileNamePrefix = "";
 
+        // Session-log extraction (Phase 2)
+        public bool mirrorSessionLogs = true;       // mirror pulled session logs to cloudMirrorFolder
+        public bool pullCleanupDevice = false;      // delete session files on device after a successful pull
+        public int maxSessionsRetainedOnDevice = 50; // SessionLogger trims older logs beyond this count
+
         public static string SettingsPath => ProjectRelative("UserSettings", "QuestBuildSettings.json");
 
         public static string ProjectRelative(params string[] parts)
@@ -84,6 +89,7 @@ namespace QuestBuild
         public string gitCommit = "";
         public string gitBranch = "";
         public bool gitDirty;
+        public string packageName = "";   // Android application id — used by Pull-Sessions to locate on-device folder
         public bool developmentBuild;
         public string[] scenes = Array.Empty<string>();
         public string unityVersion = "";

@@ -87,6 +87,8 @@ namespace QuestBuild
 
                 var fileName = BuildFileName(settings, git, startedAt);
                 report.apkFileName = fileName;
+                var apkBaseName = Path.GetFileNameWithoutExtension(fileName);
+                report.packageName = PlayerSettings.GetApplicationIdentifier(BuildTargetGroup.Android);
 
                 Directory.CreateDirectory(settings.outputFolder);
                 var apkPath = Path.Combine(settings.outputFolder, fileName);
@@ -113,7 +115,18 @@ namespace QuestBuild
                     options = options,
                 };
 
-                var buildReport = BuildPipeline.BuildPlayer(buildPlayerOptions);
+                // Stamp build identity into the APK via a transient Resources file so the
+                // in-app SessionLogger can tag every session with this exact build.
+                WriteBuildInfoResource(git, settings, report.packageName, apkBaseName, startedAt);
+                BuildReport buildReport;
+                try
+                {
+                    buildReport = BuildPipeline.BuildPlayer(buildPlayerOptions);
+                }
+                finally
+                {
+                    DeleteBuildInfoResource();
+                }
                 stopwatch.Stop();
 
                 var summary = buildReport.summary;
@@ -241,6 +254,73 @@ namespace QuestBuild
             foreach (var c in Path.GetInvalidFileNameChars())
                 s = s.Replace(c, '-');
             return s.Replace(' ', '-');
+        }
+
+        // ---- Build-info injection (Phase 2: session logging) ------------------------------
+
+        const string BuildInfoAssetPath = "Assets/Resources/QuestBuildInfo.json";
+
+        static void WriteBuildInfoResource(GitInfo git, QuestBuildSettings settings,
+            string packageName, string apkBaseName, DateTime buildStartedAt)
+        {
+            try
+            {
+                var data = new SerializableBuildInfo
+                {
+                    gitSha = git.shortSha ?? "",
+                    gitBranch = git.branch ?? "",
+                    dirty = git.dirty,
+                    bundleVersion = PlayerSettings.bundleVersion,
+                    packageName = packageName ?? "",
+                    apkBaseName = apkBaseName ?? "",
+                    buildTimestampUtc = buildStartedAt.ToUniversalTime().ToString("o"),
+                    unityVersion = Application.unityVersion,
+                    maxSessionsRetainedOnDevice = settings.maxSessionsRetainedOnDevice,
+                };
+                var json = JsonUtility.ToJson(data, true);
+
+                var fullPath = QuestBuildSettings.ProjectRelative("Assets", "Resources", "QuestBuildInfo.json");
+                Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
+                File.WriteAllText(fullPath, json);
+                AssetDatabase.Refresh(); // ensure BuildPipeline sees the new TextAsset
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[QuestBuild] Could not write QuestBuildInfo: {e.Message}");
+            }
+        }
+
+        static void DeleteBuildInfoResource()
+        {
+            try
+            {
+                // AssetDatabase.DeleteAsset removes the file and its .meta atomically.
+                if (!AssetDatabase.DeleteAsset(BuildInfoAssetPath))
+                {
+                    var fullPath = QuestBuildSettings.ProjectRelative("Assets", "Resources", "QuestBuildInfo.json");
+                    if (File.Exists(fullPath)) File.Delete(fullPath);
+                    if (File.Exists(fullPath + ".meta")) File.Delete(fullPath + ".meta");
+                }
+                AssetDatabase.Refresh();
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[QuestBuild] Could not clean up QuestBuildInfo: {e.Message}");
+            }
+        }
+
+        [Serializable]
+        class SerializableBuildInfo
+        {
+            public string gitSha = "";
+            public string gitBranch = "";
+            public bool dirty;
+            public string bundleVersion = "";
+            public string packageName = "";
+            public string apkBaseName = "";
+            public string buildTimestampUtc = "";
+            public string unityVersion = "";
+            public int maxSessionsRetainedOnDevice;
         }
     }
 

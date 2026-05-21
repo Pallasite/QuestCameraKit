@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -13,6 +14,8 @@ namespace QuestBuild
     {
         QuestBuildSettings _settings;
         QuestBuildReport _lastBuild;
+        SessionsIndex _sessionsIndex;
+        LastPull _lastPull;
         Vector2 _scroll;
 
         public static void ShowWindow()
@@ -28,10 +31,12 @@ namespace QuestBuild
             ReloadReport();
         }
 
-        // Called ~10x/sec even when unfocused — keeps the Last build panel current.
+        // Called ~10x/sec even when unfocused — keeps Last build / Sessions panels current.
         void OnInspectorUpdate()
         {
             ReloadReport();
+            LoadSessionsIndex();
+            LoadLastPull();
             Repaint();
         }
 
@@ -74,6 +79,22 @@ namespace QuestBuild
             using (new EditorGUI.DisabledScope(!_settings.developmentBuild))
                 _settings.connectProfiler = EditorGUILayout.Toggle("Connect profiler", _settings.connectProfiler);
 
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Session logs", EditorStyles.miniBoldLabel);
+            _settings.mirrorSessionLogs = EditorGUILayout.Toggle(
+                new GUIContent("Mirror to cloud folder",
+                    "Copy pulled session logs alongside the APK in the cloud-mirror folder."),
+                _settings.mirrorSessionLogs);
+            _settings.pullCleanupDevice = EditorGUILayout.Toggle(
+                new GUIContent("Cleanup device after pull",
+                    "Delete session files from the headset after a successful Pull-Sessions run."),
+                _settings.pullCleanupDevice);
+            var maxSessions = EditorGUILayout.IntField(
+                new GUIContent("Max sessions kept on device",
+                    "SessionLogger trims older logs beyond this count at launch."),
+                _settings.maxSessionsRetainedOnDevice);
+            _settings.maxSessionsRetainedOnDevice = Mathf.Max(1, maxSessions);
+
             if (EditorGUI.EndChangeCheck())
                 _settings.Save();
 
@@ -96,6 +117,9 @@ namespace QuestBuild
 
             EditorGUILayout.Space();
             DrawLastBuild();
+
+            EditorGUILayout.Space();
+            DrawSessions();
 
             EditorGUILayout.EndScrollView();
         }
@@ -163,5 +187,194 @@ namespace QuestBuild
         }
 
         static string Display(string s) => string.IsNullOrEmpty(s) ? "—" : s;
+
+        // ---- Sessions (Phase 2) -----------------------------------------------------
+
+        void LoadSessionsIndex()
+        {
+            _sessionsIndex = null;
+            var dir = SessionsDir();
+            if (dir == null) return;
+            var indexPath = Path.Combine(dir, "sessions-index.json");
+            if (!File.Exists(indexPath)) return;
+            try { _sessionsIndex = JsonUtility.FromJson<SessionsIndex>(File.ReadAllText(indexPath)); }
+            catch { _sessionsIndex = null; }
+        }
+
+        void LoadLastPull()
+        {
+            _lastPull = null;
+            try
+            {
+                var path = QuestBuildSettings.ProjectRelative("UserSettings", "last-pull.json");
+                if (File.Exists(path))
+                    _lastPull = JsonUtility.FromJson<LastPull>(File.ReadAllText(path));
+            }
+            catch { _lastPull = null; }
+        }
+
+        string SessionsDir()
+        {
+            if (_lastBuild == null
+                || string.IsNullOrEmpty(_lastBuild.apkPath)
+                || string.IsNullOrEmpty(_lastBuild.apkFileName))
+                return null;
+            var dir = Path.GetDirectoryName(_lastBuild.apkPath);
+            var baseName = Path.GetFileNameWithoutExtension(_lastBuild.apkFileName);
+            return Path.Combine(dir, baseName + ".sessions");
+        }
+
+        void DrawSessions()
+        {
+            EditorGUILayout.LabelField("Sessions", EditorStyles.boldLabel);
+
+            if (_lastBuild == null)
+            {
+                EditorGUILayout.HelpBox(
+                    "No build recorded yet — sessions appear here once you've built and pulled logs from the device.",
+                    MessageType.None);
+                return;
+            }
+
+            int sessionCount = _sessionsIndex?.sessions?.Length ?? 0;
+            int totalErrors = 0, totalExceptions = 0;
+            string lastSessionUtc = null;
+            if (_sessionsIndex?.sessions != null)
+            {
+                foreach (var s in _sessionsIndex.sessions)
+                {
+                    totalErrors += s.errorCount;
+                    totalExceptions += s.exceptionCount;
+                    if (lastSessionUtc == null
+                        || string.Compare(s.sessionStartUtc, lastSessionUtc, StringComparison.Ordinal) > 0)
+                        lastSessionUtc = s.sessionStartUtc;
+                }
+            }
+
+            EditorGUILayout.HelpBox(
+                $"Sessions for this APK: {sessionCount}\n" +
+                $"Last session:  {Display(lastSessionUtc)}\n" +
+                $"Totals — errors: {totalErrors}   exceptions: {totalExceptions}",
+                totalExceptions > 0 ? MessageType.Warning : MessageType.None);
+
+            EditorGUILayout.LabelField(BuildLastPullLine(), EditorStyles.miniLabel);
+
+            EditorGUILayout.Space();
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Pull Sessions from Device"))
+                    RunToolScript("Pull-Sessions.ps1");
+                if (GUILayout.Button("Start Live Capture"))
+                    RunToolScript("Start-LiveSession.ps1");
+            }
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                var sessionsDir = SessionsDir();
+                using (new EditorGUI.DisabledScope(sessionsDir == null || !Directory.Exists(sessionsDir)))
+                {
+                    if (GUILayout.Button("Open Sessions Folder"))
+                        EditorUtility.RevealInFinder(sessionsDir);
+                }
+                var latest = LatestSessionLogPath();
+                using (new EditorGUI.DisabledScope(latest == null))
+                {
+                    if (GUILayout.Button("Reveal Latest Session Log"))
+                        EditorUtility.RevealInFinder(latest);
+                }
+            }
+        }
+
+        string BuildLastPullLine()
+        {
+            if (_lastPull == null || string.IsNullOrEmpty(_lastPull.timestampUtc))
+                return "No device pull recorded yet.";
+            if (DateTime.TryParse(_lastPull.timestampUtc, null,
+                System.Globalization.DateTimeStyles.RoundtripKind, out var pulledAt))
+            {
+                var age = DateTime.UtcNow - pulledAt.ToUniversalTime();
+                var human = age.TotalMinutes < 60
+                    ? $"{Math.Max(0, (int)age.TotalMinutes)} min ago"
+                    : age.TotalHours < 24
+                        ? $"{(int)age.TotalHours} h ago"
+                        : $"{(int)age.TotalDays} d ago";
+                var line = $"Last device pull: {human}  (matched {_lastPull.pulled}, unmatched {_lastPull.unmatched})";
+                if (age.TotalHours > 24) line += "  — consider pulling fresh sessions.";
+                return line;
+            }
+            return $"Last device pull: {_lastPull.timestampUtc}";
+        }
+
+        string LatestSessionLogPath()
+        {
+            var dir = SessionsDir();
+            if (dir == null || !Directory.Exists(dir)) return null;
+            try
+            {
+                var info = new DirectoryInfo(dir);
+                var newest = info.GetFiles("*.log")
+                    .OrderByDescending(f => f.LastWriteTimeUtc)
+                    .FirstOrDefault();
+                return newest?.FullName;
+            }
+            catch { return null; }
+        }
+
+        static void RunToolScript(string scriptName)
+        {
+            try
+            {
+                var repoRoot = Path.GetFullPath(Path.Combine(Application.dataPath, "..", ".."));
+                var script = Path.Combine(repoRoot, "Tools", scriptName);
+                if (!File.Exists(script))
+                {
+                    EditorUtility.DisplayDialog("Quest Build",
+                        $"Tool script not found:\n{script}", "OK");
+                    return;
+                }
+                var psi = new System.Diagnostics.ProcessStartInfo("powershell.exe",
+                    $"-NoExit -ExecutionPolicy Bypass -File \"{script}\"")
+                {
+                    WorkingDirectory = repoRoot,
+                    UseShellExecute = true,
+                };
+                System.Diagnostics.Process.Start(psi);
+            }
+            catch (Exception e)
+            {
+                EditorUtility.DisplayDialog("Quest Build",
+                    $"Could not start PowerShell:\n{e.Message}", "OK");
+            }
+        }
+
+        [Serializable]
+        class SessionsIndex
+        {
+            public SessionSummary[] sessions = Array.Empty<SessionSummary>();
+            public string lastUpdatedUtc = "";
+        }
+
+        [Serializable]
+        class SessionSummary
+        {
+            public string sessionId = "";
+            public string sessionStartUtc = "";
+            public string sessionEndUtc = "";
+            public bool cleanExit;
+            public double durationSec;
+            public int lineCount;
+            public int warningCount;
+            public int errorCount;
+            public int exceptionCount;
+        }
+
+        [Serializable]
+        class LastPull
+        {
+            public string timestampUtc = "";
+            public int pulled;
+            public int unmatched;
+            public string devicePath = "";
+        }
     }
 }
