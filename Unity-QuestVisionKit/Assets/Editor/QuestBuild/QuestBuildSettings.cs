@@ -22,6 +22,10 @@ namespace QuestBuild
         public bool pullCleanupDevice = false;      // delete session files on device after a successful pull
         public int maxSessionsRetainedOnDevice = 50; // SessionLogger trims older logs beyond this count
 
+        // Deploy (Phase 5)
+        public bool autoDeployOnBuildSuccess = false;  // pre-pull + install when a device is connected after Build APK Now
+        public bool launchAfterDeploy = false;         // launch the app on headset after install
+
         public static string SettingsPath => ProjectRelative("UserSettings", "QuestBuildSettings.json");
 
         public static string ProjectRelative(params string[] parts)

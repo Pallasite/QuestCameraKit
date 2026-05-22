@@ -167,6 +167,16 @@ to specific builds (see "Joining build metadata to CSV analyses" below). The
 dev-only CSVs above ship in development builds only — their **absence** in a
 session folder is the signal that the session ran on a production build.
 
+**On-device session retention across re-installs.** `adb install -r` (used by
+`Tools/Install-LatestAPK.ps1` and the Build Panel's auto-deploy flow) preserves
+the app's `persistentDataPath`, so `Sessions/<sessionId>/` folders from previous
+builds remain on the device after a new install. The dev-side `SessionLogger`
+trims folders beyond `maxSessionsRetainedOnDevice` (default 50) on each launch.
+The deploy flow also pre-pulls existing sessions before installing, so the
+local `<apkBase>.sessions/` mirror is always current — you can additionally run
+`Tools/Pull-Sessions.ps1` (with optional `-Cleanup`) at any time to refresh or
+clear the device side.
+
 ### Format
 
 - **Single CSV per session**, header row first, one event per row thereafter.

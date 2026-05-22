@@ -18,6 +18,11 @@ namespace QuestBuild
         LastPull _lastPull;
         Vector2 _scroll;
 
+        // Phase 5 deploy tracking: only deploy when last-build.timestampLocal advances.
+        // _forceDeployNextBuild is a one-shot set by the "Build + Deploy" button.
+        string _lastDeployedTimestamp;
+        bool _forceDeployNextBuild;
+
         public static void ShowWindow()
         {
             var window = GetWindow<QuestBuildWindow>("Quest Build");
@@ -37,6 +42,7 @@ namespace QuestBuild
             ReloadReport();
             LoadSessionsIndex();
             LoadLastPull();
+            MaybeAutoDeploy();
             Repaint();
         }
 
@@ -95,6 +101,17 @@ namespace QuestBuild
                 _settings.maxSessionsRetainedOnDevice);
             _settings.maxSessionsRetainedOnDevice = Mathf.Max(1, maxSessions);
 
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Deploy", EditorStyles.miniBoldLabel);
+            _settings.autoDeployOnBuildSuccess = EditorGUILayout.Toggle(
+                new GUIContent("Auto-deploy after Build APK Now",
+                    "When on, a successful Build APK Now press triggers Deploy-Latest.ps1 (pre-pull + install) if a device is connected. The 'Build + Deploy' button always deploys regardless of this toggle."),
+                _settings.autoDeployOnBuildSuccess);
+            _settings.launchAfterDeploy = EditorGUILayout.Toggle(
+                new GUIContent("Auto-launch on headset after install",
+                    "When on, Deploy-Latest.ps1 launches the app on the headset after install (adb shell monkey)."),
+                _settings.launchAfterDeploy);
+
             if (EditorGUI.EndChangeCheck())
                 _settings.Save();
 
@@ -110,6 +127,23 @@ namespace QuestBuild
                 {
                     _settings.Save();
                     QuestBuilder.BuildAPK();
+                }
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("Build + Deploy", GUILayout.Height(28)))
+                    {
+                        _settings.Save();
+                        // One-shot: the OnInspectorUpdate hook deploys when this build's
+                        // succeeded report lands, regardless of the auto-deploy toggle.
+                        _forceDeployNextBuild = true;
+                        QuestBuilder.BuildAPK();
+                    }
+                    if (GUILayout.Button("Deploy Latest APK", GUILayout.Height(28)))
+                    {
+                        // Skip the build entirely - push whatever .apk is newest in outputFolder.
+                        bool launch = _settings != null && _settings.launchAfterDeploy;
+                        RunToolScript("Deploy-Latest.ps1", launch ? "-Launch" : "");
+                    }
                 }
             }
             if (EditorApplication.isCompiling)
@@ -322,7 +356,7 @@ namespace QuestBuild
             catch { return null; }
         }
 
-        static void RunToolScript(string scriptName)
+        static void RunToolScript(string scriptName, string extraArgs = "")
         {
             try
             {
@@ -334,8 +368,9 @@ namespace QuestBuild
                         $"Tool script not found:\n{script}", "OK");
                     return;
                 }
-                var psi = new System.Diagnostics.ProcessStartInfo("powershell.exe",
-                    $"-NoExit -ExecutionPolicy Bypass -File \"{script}\"")
+                var argString = $"-NoExit -ExecutionPolicy Bypass -File \"{script}\"";
+                if (!string.IsNullOrEmpty(extraArgs)) argString += " " + extraArgs;
+                var psi = new System.Diagnostics.ProcessStartInfo("powershell.exe", argString)
                 {
                     WorkingDirectory = repoRoot,
                     UseShellExecute = true,
@@ -347,6 +382,46 @@ namespace QuestBuild
                 EditorUtility.DisplayDialog("Quest Build",
                     $"Could not start PowerShell:\n{e.Message}", "OK");
             }
+        }
+
+        // Phase 5 — auto-deploy hook.
+        // Watches last-build.json's timestampLocal for a new succeeded build, then spawns
+        // Deploy-Latest.ps1 when either the autoDeployOnBuildSuccess setting is on or the
+        // one-shot "Build + Deploy" force flag was set this click. Seeds the watermark on
+        // first observation so we don't surprise-deploy an existing report.
+        void MaybeAutoDeploy()
+        {
+            if (_lastBuild == null) return;
+            if (string.IsNullOrEmpty(_lastBuild.timestampLocal)) return;
+
+            bool isFirstObservation = _lastDeployedTimestamp == null;
+            bool isNew = !isFirstObservation
+                && string.Compare(_lastBuild.timestampLocal, _lastDeployedTimestamp, StringComparison.Ordinal) > 0;
+
+            // Seed-only path: first observation with no force-deploy intent → just record
+            // the watermark and do nothing. Avoids re-deploying historical builds when the
+            // window opens.
+            if (isFirstObservation && !_forceDeployNextBuild)
+            {
+                _lastDeployedTimestamp = _lastBuild.timestampLocal;
+                return;
+            }
+
+            if (!isFirstObservation && !isNew) return;
+
+            bool isSuccess = _lastBuild.status == "succeeded";
+            bool autoDeploy = _settings != null && _settings.autoDeployOnBuildSuccess;
+            bool shouldDeploy = isSuccess && (_forceDeployNextBuild || autoDeploy);
+
+            // Always advance the watermark and consume the force flag, even on failed builds
+            // or when we decide not to deploy. Prevents a stale force flag from biting later.
+            _lastDeployedTimestamp = _lastBuild.timestampLocal;
+            _forceDeployNextBuild = false;
+
+            if (!shouldDeploy) return;
+
+            bool launch = _settings != null && _settings.launchAfterDeploy;
+            RunToolScript("Deploy-Latest.ps1", launch ? "-Launch" : "");
         }
 
         [Serializable]
