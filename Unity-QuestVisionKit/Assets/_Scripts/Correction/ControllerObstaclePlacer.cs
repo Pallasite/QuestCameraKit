@@ -73,8 +73,7 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
     [SerializeField] private PipelineStatusHUD hud;
 
     [Header("Placement geometry")]
-    [Tooltip("Vertical offset added to the controller-midpoint, in meters. " +
-             "Use this to drop the obstacle from controller/rig height down onto the gait mat.")]
+    [Tooltip("Vertical offset added to the controller-midpoint, in meters. " +             "Use this to drop the obstacle from controller/rig height down onto the gait mat.")]
     [SerializeField] private float verticalOffsetMeters = 0f;
 
     [Tooltip("Euler rotation offset applied after the perpendicular yaw. Use (0,180,0) to flip " +

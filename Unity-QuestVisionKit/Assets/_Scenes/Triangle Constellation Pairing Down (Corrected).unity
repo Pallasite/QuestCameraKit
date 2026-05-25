@@ -2016,12 +2016,12 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 336238420}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.01884, y: 0.01319, z: 0.01884}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -0.56551, y: -2.18241, z: 1.8906399}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 0}
+  m_Father: {fileID: 593700555}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &341069501
 GameObject:
@@ -3561,7 +3561,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _monoscopic: 0
-  _sharpenType: 0
+  _sharpenType: 262144
   _enableDynamicResolution: 0
   minDynamicResolutionScale: 1
   maxDynamicResolutionScale: 1
@@ -4079,7 +4079,8 @@ Transform:
   m_LocalPosition: {x: 0.58435, y: 2.1956, z: -1.8718}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children: []
+  m_Children:
+  - {fileID: 336238422}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &593700556
@@ -4097,6 +4098,7 @@ MonoBehaviour:
   input: {fileID: 593700557}
   corrector: {fileID: 665711662}
   placer: {fileID: 0}
+  driftCorrector: {fileID: 0}
   manualTarget: {fileID: 0}
   activeTarget: 0
   toggleTargetButton: 32768
@@ -4588,7 +4590,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &665711652
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -9316,7 +9318,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SessionLogger
   participantId: P000
   enableLogging: 1
-  flushIntervalSeconds: 2
+  flushIntervalSeconds: 5
   sessionHeaderNotes: 
 --- !u!1 &1479416278
 GameObject:
@@ -12946,8 +12948,7 @@ SceneRoots:
   - {fileID: 553221848}
   - {fileID: 911098802}
   - {fileID: 1759417515}
-  - {fileID: 336238422}
+  - {fileID: 247693097}
   - {fileID: 593700555}
   - {fileID: 665711654}
-  - {fileID: 247693097}
   - {fileID: 1435548985}
