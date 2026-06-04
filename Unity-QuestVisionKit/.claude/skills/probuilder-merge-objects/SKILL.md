@@ -51,7 +51,7 @@ Read the /unity-initial-setup skill for detailed installation instructions.
   "type": "object",
   "properties": {
     "gameObjectRefs": {
-      "$ref": "#/$defs/AIGD.GameObjectRef[]"
+      "$ref": "#/$defs/AIGD.GameObjectRef-1"
     },
     "deleteSourceObjects": {
       "type": "boolean"
@@ -94,7 +94,7 @@ Read the /unity-initial-setup skill for detailed installation instructions.
     "System.Type": {
       "type": "string"
     },
-    "AIGD.GameObjectRef[]": {
+    "AIGD.GameObjectRef-1": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/AIGD.GameObjectRef",
@@ -117,17 +117,17 @@ Read the /unity-initial-setup skill for detailed installation instructions.
   "type": "object",
   "properties": {
     "result": {
-      "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+MergeObjectsResponse"
+      "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-MergeObjectsResponse"
     }
   },
   "$defs": {
-    "System.Collections.Generic.List<com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+SourceObjectInfo>": {
+    "System.Collections.Generic.List(com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-SourceObjectInfo)": {
       "type": "array",
       "items": {
-        "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+SourceObjectInfo"
+        "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-SourceObjectInfo"
       }
     },
-    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+SourceObjectInfo": {
+    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-SourceObjectInfo": {
       "type": "object",
       "properties": {
         "index": {
@@ -144,13 +144,13 @@ Read the /unity-initial-setup skill for detailed installation instructions.
         "index"
       ]
     },
-    "System.Collections.Generic.List<com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+AdditionalMeshInfo>": {
+    "System.Collections.Generic.List(com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-AdditionalMeshInfo)": {
       "type": "array",
       "items": {
-        "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+AdditionalMeshInfo"
+        "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-AdditionalMeshInfo"
       }
     },
-    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+AdditionalMeshInfo": {
+    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-AdditionalMeshInfo": {
       "type": "object",
       "properties": {
         "name": {
@@ -164,7 +164,7 @@ Read the /unity-initial-setup skill for detailed installation instructions.
         "instanceId"
       ]
     },
-    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+MergeObjectsResponse": {
+    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-MergeObjectsResponse": {
       "type": "object",
       "properties": {
         "mergedMeshCount": {
@@ -195,10 +195,10 @@ Read the /unity-initial-setup skill for detailed installation instructions.
           "type": "integer"
         },
         "sourceObjects": {
-          "$ref": "#/$defs/System.Collections.Generic.List<com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+SourceObjectInfo>"
+          "$ref": "#/$defs/System.Collections.Generic.List(com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-SourceObjectInfo)"
         },
         "additionalMeshes": {
-          "$ref": "#/$defs/System.Collections.Generic.List<com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+AdditionalMeshInfo>"
+          "$ref": "#/$defs/System.Collections.Generic.List(com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-AdditionalMeshInfo)"
         }
       },
       "required": [

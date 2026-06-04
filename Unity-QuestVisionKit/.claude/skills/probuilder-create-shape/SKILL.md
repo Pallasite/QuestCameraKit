@@ -172,11 +172,11 @@ Read the /unity-initial-setup skill for detailed installation instructions.
   "type": "object",
   "properties": {
     "result": {
-      "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+CreateShapeResponse"
+      "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-CreateShapeResponse"
     }
   },
   "$defs": {
-    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+CreateShapeResponse": {
+    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-CreateShapeResponse": {
       "type": "object",
       "properties": {
         "gameObjectName": {

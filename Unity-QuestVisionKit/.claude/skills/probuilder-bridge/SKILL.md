@@ -58,10 +58,10 @@ Read the /unity-initial-setup skill for detailed installation instructions.
       "$ref": "#/$defs/AIGD.GameObjectRef"
     },
     "edgeA": {
-      "$ref": "#/$defs/System.Int32[]"
+      "$ref": "#/$defs/System.Int32-1"
     },
     "edgeB": {
-      "$ref": "#/$defs/System.Int32[]"
+      "$ref": "#/$defs/System.Int32-1"
     },
     "allowNonManifold": {
       "type": "boolean"
@@ -104,7 +104,7 @@ Read the /unity-initial-setup skill for detailed installation instructions.
       ],
       "description": "Find GameObject in opened Prefab or in the active Scene."
     },
-    "System.Int32[]": {
+    "System.Int32-1": {
       "type": "array",
       "items": {
         "type": "integer"
@@ -128,24 +128,24 @@ Read the /unity-initial-setup skill for detailed installation instructions.
   "type": "object",
   "properties": {
     "result": {
-      "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+BridgeResponse"
+      "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-BridgeResponse"
     }
   },
   "$defs": {
-    "System.Int32[]": {
+    "System.Int32-1": {
       "type": "array",
       "items": {
         "type": "integer"
       }
     },
-    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+BridgeResponse": {
+    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-BridgeResponse": {
       "type": "object",
       "properties": {
         "edgeA": {
-          "$ref": "#/$defs/System.Int32[]"
+          "$ref": "#/$defs/System.Int32-1"
         },
         "edgeB": {
-          "$ref": "#/$defs/System.Int32[]"
+          "$ref": "#/$defs/System.Int32-1"
         },
         "newFaceIndex": {
           "type": "integer"

@@ -58,7 +58,7 @@ Read the /unity-initial-setup skill for detailed installation instructions.
       "$ref": "#/$defs/AIGD.GameObjectRef"
     },
     "faceIndices": {
-      "$ref": "#/$defs/System.Int32[]"
+      "$ref": "#/$defs/System.Int32-1"
     },
     "faceDirection": {
       "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.FaceDirection"
@@ -101,7 +101,7 @@ Read the /unity-initial-setup skill for detailed installation instructions.
       ],
       "description": "Find GameObject in opened Prefab or in the active Scene."
     },
-    "System.Int32[]": {
+    "System.Int32-1": {
       "type": "array",
       "items": {
         "type": "integer"
@@ -134,17 +134,17 @@ Read the /unity-initial-setup skill for detailed installation instructions.
   "type": "object",
   "properties": {
     "result": {
-      "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+FlipNormalsResponse"
+      "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-FlipNormalsResponse"
     }
   },
   "$defs": {
-    "System.Int32[]": {
+    "System.Int32-1": {
       "type": "array",
       "items": {
         "type": "integer"
       }
     },
-    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+FlipNormalsResponse": {
+    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-FlipNormalsResponse": {
       "type": "object",
       "properties": {
         "facesFlipped": {
@@ -154,7 +154,7 @@ Read the /unity-initial-setup skill for detailed installation instructions.
           "type": "string"
         },
         "faceIndices": {
-          "$ref": "#/$defs/System.Int32[]"
+          "$ref": "#/$defs/System.Int32-1"
         },
         "totalFaceCount": {
           "type": "integer"

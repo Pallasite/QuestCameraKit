@@ -58,7 +58,7 @@ Read the /unity-initial-setup skill for detailed installation instructions.
       "$ref": "#/$defs/AIGD.GameObjectRef"
     },
     "edges": {
-      "$ref": "#/$defs/System.Int32[][]"
+      "$ref": "#/$defs/System.Int32-1-1"
     },
     "faceDirection": {
       "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.FaceDirection"
@@ -101,16 +101,16 @@ Read the /unity-initial-setup skill for detailed installation instructions.
       ],
       "description": "Find GameObject in opened Prefab or in the active Scene."
     },
-    "System.Int32[]": {
+    "System.Int32-1": {
       "type": "array",
       "items": {
         "type": "integer"
       }
     },
-    "System.Int32[][]": {
+    "System.Int32-1-1": {
       "type": "array",
       "items": {
-        "$ref": "#/$defs/System.Int32[]"
+        "$ref": "#/$defs/System.Int32-1"
       }
     },
     "com.IvanMurzak.Unity.MCP.Editor.API.FaceDirection": {
@@ -140,11 +140,11 @@ Read the /unity-initial-setup skill for detailed installation instructions.
   "type": "object",
   "properties": {
     "result": {
-      "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+ConnectEdgesResponse"
+      "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-ConnectEdgesResponse"
     }
   },
   "$defs": {
-    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+ConnectEdgesResponse": {
+    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-ConnectEdgesResponse": {
       "type": "object",
       "properties": {
         "selectionMethod": {

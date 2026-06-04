@@ -142,11 +142,11 @@ Read the /unity-initial-setup skill for detailed installation instructions.
   "type": "object",
   "properties": {
     "result": {
-      "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+SetPivotResponse"
+      "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-SetPivotResponse"
     }
   },
   "$defs": {
-    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+SetPivotResponse": {
+    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-SetPivotResponse": {
       "type": "object",
       "properties": {
         "pivotLocation": {

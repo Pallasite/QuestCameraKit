@@ -130,11 +130,11 @@ Read the /unity-initial-setup skill for detailed installation instructions.
   "type": "object",
   "properties": {
     "result": {
-      "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+GetMeshInfoResponse"
+      "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-GetMeshInfoResponse"
     }
   },
   "$defs": {
-    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+BoundsInfo": {
+    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-BoundsInfo": {
       "type": "object",
       "properties": {
         "center": {
@@ -151,39 +151,39 @@ Read the /unity-initial-setup skill for detailed installation instructions.
         }
       }
     },
-    "System.Collections.Generic.List<com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+FaceDirectionInfo>": {
+    "System.Collections.Generic.List(com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-FaceDirectionInfo)": {
       "type": "array",
       "items": {
-        "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+FaceDirectionInfo"
+        "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-FaceDirectionInfo"
       }
     },
-    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+FaceDirectionInfo": {
+    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-FaceDirectionInfo": {
       "type": "object",
       "properties": {
         "direction": {
           "type": "string"
         },
         "faceIndices": {
-          "$ref": "#/$defs/System.Int32[]"
+          "$ref": "#/$defs/System.Int32-1"
         },
         "firstFaceCenter": {
           "type": "string"
         }
       }
     },
-    "System.Int32[]": {
+    "System.Int32-1": {
       "type": "array",
       "items": {
         "type": "integer"
       }
     },
-    "System.Collections.Generic.List<com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+FaceInfo>": {
+    "System.Collections.Generic.List(com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-FaceInfo)": {
       "type": "array",
       "items": {
-        "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+FaceInfo"
+        "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-FaceInfo"
       }
     },
-    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+FaceInfo": {
+    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-FaceInfo": {
       "type": "object",
       "properties": {
         "index": {
@@ -199,10 +199,10 @@ Read the /unity-initial-setup skill for detailed installation instructions.
           "type": "string"
         },
         "vertices": {
-          "$ref": "#/$defs/System.Collections.Generic.List<com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+VertexInfo>"
+          "$ref": "#/$defs/System.Collections.Generic.List(com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-VertexInfo)"
         },
         "edges": {
-          "$ref": "#/$defs/System.Collections.Generic.List<com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+EdgeInfo>"
+          "$ref": "#/$defs/System.Collections.Generic.List(com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-EdgeInfo)"
         }
       },
       "required": [
@@ -211,13 +211,13 @@ Read the /unity-initial-setup skill for detailed installation instructions.
         "triangleCount"
       ]
     },
-    "System.Collections.Generic.List<com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+VertexInfo>": {
+    "System.Collections.Generic.List(com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-VertexInfo)": {
       "type": "array",
       "items": {
-        "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+VertexInfo"
+        "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-VertexInfo"
       }
     },
-    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+VertexInfo": {
+    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-VertexInfo": {
       "type": "object",
       "properties": {
         "index": {
@@ -231,13 +231,13 @@ Read the /unity-initial-setup skill for detailed installation instructions.
         "index"
       ]
     },
-    "System.Collections.Generic.List<com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+EdgeInfo>": {
+    "System.Collections.Generic.List(com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-EdgeInfo)": {
       "type": "array",
       "items": {
-        "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+EdgeInfo"
+        "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-EdgeInfo"
       }
     },
-    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+EdgeInfo": {
+    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-EdgeInfo": {
       "type": "object",
       "properties": {
         "vertexA": {
@@ -258,7 +258,7 @@ Read the /unity-initial-setup skill for detailed installation instructions.
         "vertexB"
       ]
     },
-    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+GetMeshInfoResponse": {
+    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-GetMeshInfoResponse": {
       "type": "object",
       "properties": {
         "gameObjectName": {
@@ -280,13 +280,13 @@ Read the /unity-initial-setup skill for detailed installation instructions.
           "type": "integer"
         },
         "bounds": {
-          "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+BoundsInfo"
+          "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-BoundsInfo"
         },
         "faceDirections": {
-          "$ref": "#/$defs/System.Collections.Generic.List<com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+FaceDirectionInfo>"
+          "$ref": "#/$defs/System.Collections.Generic.List(com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-FaceDirectionInfo)"
         },
         "faces": {
-          "$ref": "#/$defs/System.Collections.Generic.List<com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+FaceInfo>"
+          "$ref": "#/$defs/System.Collections.Generic.List(com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-FaceInfo)"
         },
         "facesShown": {
           "type": "integer"

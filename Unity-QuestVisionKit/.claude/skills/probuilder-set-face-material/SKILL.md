@@ -63,7 +63,7 @@ Read the /unity-initial-setup skill for detailed installation instructions.
       "type": "string"
     },
     "faceIndices": {
-      "$ref": "#/$defs/System.Int32[]"
+      "$ref": "#/$defs/System.Int32-1"
     },
     "faceDirection": {
       "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.FaceDirection"
@@ -106,7 +106,7 @@ Read the /unity-initial-setup skill for detailed installation instructions.
       ],
       "description": "Find GameObject in opened Prefab or in the active Scene."
     },
-    "System.Int32[]": {
+    "System.Int32-1": {
       "type": "array",
       "items": {
         "type": "integer"
@@ -140,23 +140,23 @@ Read the /unity-initial-setup skill for detailed installation instructions.
   "type": "object",
   "properties": {
     "result": {
-      "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+SetFaceMaterialResponse"
+      "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-SetFaceMaterialResponse"
     }
   },
   "$defs": {
-    "System.Int32[]": {
+    "System.Int32-1": {
       "type": "array",
       "items": {
         "type": "integer"
       }
     },
-    "System.Collections.Generic.List<com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+MaterialInfo>": {
+    "System.Collections.Generic.List(com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-MaterialInfo)": {
       "type": "array",
       "items": {
-        "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+MaterialInfo"
+        "$ref": "#/$defs/com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-MaterialInfo"
       }
     },
-    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+MaterialInfo": {
+    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-MaterialInfo": {
       "type": "object",
       "properties": {
         "index": {
@@ -170,7 +170,7 @@ Read the /unity-initial-setup skill for detailed installation instructions.
         "index"
       ]
     },
-    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+SetFaceMaterialResponse": {
+    "com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-SetFaceMaterialResponse": {
       "type": "object",
       "properties": {
         "materialName": {
@@ -183,10 +183,10 @@ Read the /unity-initial-setup skill for detailed installation instructions.
           "type": "string"
         },
         "facesUpdated": {
-          "$ref": "#/$defs/System.Int32[]"
+          "$ref": "#/$defs/System.Int32-1"
         },
         "meshMaterials": {
-          "$ref": "#/$defs/System.Collections.Generic.List<com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder+MaterialInfo>"
+          "$ref": "#/$defs/System.Collections.Generic.List(com.IvanMurzak.Unity.MCP.Editor.API.Tool_ProBuilder-MaterialInfo)"
         }
       },
       "required": [
