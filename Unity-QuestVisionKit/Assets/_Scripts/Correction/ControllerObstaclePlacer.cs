@@ -35,7 +35,7 @@ using UnityEngine;
 ///   - Locked: a dedicated <see cref="OVRSpatialAnchor"/> is created at the
 ///     current correction-root pose; the correction-root reparents under it
 ///     for SLAM-robust anchoring. While the anchor exists, the placer emits
-///     state_snapshot rows at 5Hz (correction_source=controller_placer) so
+///     state_snapshot rows at 30Hz (correction_source=controller_placer) so
 ///     its pose can be compared against the AprilTag anchor_baseline in
 ///     post-analysis. Toggle with the lock button.
 ///
@@ -96,7 +96,7 @@ public sealed class ControllerObstaclePlacer : MonoBehaviour
     [Tooltip("While the dedicated anchor exists, emit state_snapshot rows at this rate " +
              "(correction_source=controller_placer) so the placer-anchor pose can be " +
              "compared against the AprilTag anchor_baseline source in post.")]
-    [SerializeField, Range(1f, 30f)] private float anchorSnapshotRateHz = 5f;
+    [SerializeField, Range(1f, 30f)] private float anchorSnapshotRateHz = 30f;
 
     /// <summary>True while the obstacle is frozen (not following the controllers).</summary>
     public bool IsLocked { get; private set; }

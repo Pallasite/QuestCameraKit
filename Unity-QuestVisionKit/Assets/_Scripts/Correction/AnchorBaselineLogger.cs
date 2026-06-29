@@ -30,8 +30,8 @@ public sealed class AnchorBaselineLogger : MonoBehaviour
     [SerializeField] private ControllerRigidBodyValidator rigidBodyValidator;
 
     [Header("Cadence")]
-    [Tooltip("Snapshot rate in Hz. 5Hz spec default (200ms interval).")]
-    [SerializeField, Range(1f, 30f)] private float snapshotRateHz = 5f;
+    [Tooltip("Snapshot rate in Hz. 30Hz default (33ms interval) for fine drift resolution.")]
+    [SerializeField, Range(1f, 30f)] private float snapshotRateHz = 30f;
 
     [Header("Gates")]
     [Tooltip("Controllers beyond this distance from the headset have their pose cells left empty.")]

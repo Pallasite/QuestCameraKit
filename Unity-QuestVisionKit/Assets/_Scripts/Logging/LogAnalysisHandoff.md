@@ -366,16 +366,21 @@ Example row:
 
 #### `state_snapshot`
 
-The bulk of the data. ~5Hz periodic pose + state captures.
+The bulk of the data. ~30Hz periodic pose + state captures (raised from 5Hz
+for finer drift resolution — the three snapshot streams below now sample at
+30Hz and stay row-aligned for offline comparison).
 
 - `correction_source=='anchor_baseline'` rows come from `AnchorBaselineLogger`,
-  ~5Hz, always on once the AprilTag constellation is calibrated. They
+  ~30Hz, always on once the AprilTag constellation is calibrated. They
   populate `anchor_pos_xyz` / `anchor_rot_xyzw` (the AprilTag anchor's bare
   world pose), `headset_pos_xyz` / `headset_rot_xyzw` (head pose), and (when
   the controllers are within 2m of the head) the controller pose, validity,
-  velocity, and rigid-body fields.
+  velocity, and rigid-body fields. Note: controller pose cells are left empty
+  when a controller is >2m from the head, and `position_valid_*` reads true
+  even during IMU dead-reckoning — cross-check `velocity_*_mps` before trusting
+  a static-controller pose.
 - `correction_source=='controller_placer'` rows come from
-  `ControllerObstaclePlacer`, ~5Hz, **only while a placer-anchor lock is
+  `ControllerObstaclePlacer`, ~30Hz, **only while a placer-anchor lock is
   active**. They populate `anchor_pos_xyz` / `anchor_rot_xyzw` (the
   placer's dedicated anchor pose). Other pose fields are empty.
 
@@ -457,9 +462,9 @@ A typical session, in row order:
 1. **`session_event` `subtype=session_start`** — first row. `detail` carries the build/scene/participant/wall-clock-ms.
 2. Maybe immediately: **`sleep_event battery_sample`** (battery sampled on first frame of the provider).
 3. **`session_event subtype=rigid_body_baseline`** — emitted once the experimenter triggers `ControllerRigidBodyValidator.CaptureBaselineNow()` (or it's triggered programmatically). Preceded by 30 `calibration_event` sample rows + a `calibration_event` summary row.
-4. **`state_snapshot anchor_baseline`** rows begin at 5Hz once the AprilTag constellation auto-calibrates (~5 consecutive frames with ≥3 tags visible). These continue for the rest of the session.
+4. **`state_snapshot anchor_baseline`** rows begin at 30Hz once the AprilTag constellation auto-calibrates (~5 consecutive frames with ≥3 tags visible). These continue for the rest of the session.
 5. **`walk_event walk_phase=start`** when the first trial loads, then `moved` / `reset` / `end` per trial. Trials advance for the duration of the session.
-6. Optional: **`session_event subtype=obstacle_placer_lock`** rows when the experimenter presses the left index trigger. Each toggle creates / destroys a `ControllerPlacerAnchor`. While the anchor exists, **`state_snapshot controller_placer`** rows interleave with the `anchor_baseline` rows at 5Hz.
+6. Optional: **`session_event subtype=obstacle_placer_lock`** rows when the experimenter presses the left index trigger. Each toggle creates / destroys a `ControllerPlacerAnchor`. While the anchor exists, **`state_snapshot controller_placer`** rows interleave with the `anchor_baseline` rows at 30Hz.
 7. Periodic **`sleep_event pulse`** every ~5s; battery_sample every ~60s; `disconnect/reconnect` only if a controller actually drops.
 8. **`session_event subtype=session_end`** or `application_quit` on app close.
 

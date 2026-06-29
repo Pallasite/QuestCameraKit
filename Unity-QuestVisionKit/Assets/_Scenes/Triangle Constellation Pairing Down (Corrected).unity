@@ -2939,7 +2939,7 @@ MonoBehaviour:
   lockToggleButton: 8192
   echoControlsButton: 2097152
   hapticOnLockToggle: 1
-  anchorSnapshotRateHz: 5
+  anchorSnapshotRateHz: 30
 --- !u!1 &486274871
 GameObject:
   m_ObjectHideFlags: 0
@@ -8252,7 +8252,7 @@ MonoBehaviour:
   startWriteMode: 1
   startCorrectionEnabled: 1
   startEnabledGates: -1
-  anchorSnapshotRateHz: 5
+  anchorSnapshotRateHz: 30
 --- !u!1 &1265572076
 GameObject:
   m_ObjectHideFlags: 0
@@ -9318,7 +9318,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SessionLogger
   participantId: P000
   enableLogging: 1
-  flushIntervalSeconds: 5
+  flushIntervalSeconds: 1
   sessionHeaderNotes: 
 --- !u!1 &1479416278
 GameObject:
@@ -11611,7 +11611,7 @@ MonoBehaviour:
   corrector: {fileID: 665711662}
   poseProvider: {fileID: 422922646}
   rigidBodyValidator: {fileID: 1804836658}
-  snapshotRateHz: 5
+  snapshotRateHz: 30
   controllerWorkingRangeMeters: 2
 --- !u!1 &1829325345
 GameObject:

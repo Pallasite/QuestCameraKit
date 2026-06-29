@@ -170,9 +170,9 @@ public sealed class ControllerDriftCorrector : MonoBehaviour
 
     [Header("Anchor logging")]
     [Tooltip("State_snapshot rows are emitted at this rate while anchored (correction_source=controller). " +
-             "Mirrors the placer's 5Hz so the corrected anchor's pose can be compared against " +
+             "Mirrors the placer's 30Hz so the corrected anchor's pose can be compared against " +
              "anchor_baseline and controller_placer streams in offline analysis.")]
-    [SerializeField, Range(1f, 30f)] private float anchorSnapshotRateHz = 5f;
+    [SerializeField, Range(1f, 30f)] private float anchorSnapshotRateHz = 30f;
 
     // ======================================================================
     // Public state (read-only)
@@ -379,7 +379,7 @@ public sealed class ControllerDriftCorrector : MonoBehaviour
         {
             // Cheapest path: anchor exists but no logic running.
             if (_wasActive) { _wasActive = false; EmitSourceStateChange("active", "0"); }
-            // Anchor-snapshot 5Hz still runs even when Disabled — the anchor's own pose is data.
+            // Anchor-snapshot 30Hz still runs even when Disabled — the anchor's own pose is data.
             MaybeEmitAnchorSnapshot();
             return;
         }

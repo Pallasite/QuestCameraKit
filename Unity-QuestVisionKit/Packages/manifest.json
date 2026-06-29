@@ -1,6 +1,6 @@
 {
   "dependencies": {
-    "com.ivanmurzak.unity.mcp": "0.79.0",
+    "com.ivanmurzak.unity.mcp": "0.82.2",
     "com.ivanmurzak.unity.mcp.probuilder": "1.0.72",
     "com.meta.xr.mrutilitykit": "83.0.4",
     "com.meta.xr.sdk.core": "83.0.4",
