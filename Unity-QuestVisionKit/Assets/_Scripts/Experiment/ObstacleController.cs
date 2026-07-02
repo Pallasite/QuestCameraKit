@@ -112,14 +112,44 @@ public class ObstacleController : MonoBehaviour
     /// <summary>The perturbationPivot transform (available after setup).</summary>
     public Transform PerturbationPivot => _perturbationPivot;
 
+    /// <summary>
+    /// Point this controller at an obstacle Transform created at runtime (e.g. by
+    /// <see cref="ObstaclePlacementController"/>). Sets the manual target and (re)runs
+    /// setup so the PerturbationPivot is created under it. Use when there is no
+    /// ConstellationDriftCorrector in the scene.
+    /// </summary>
+    public void SetManualTarget(Transform target)
+    {
+        manualTarget = target;
+        if (_defaultBehavior == null)
+            _defaultBehavior = GetComponent<DefaultObstacleBehavior>() ?? gameObject.AddComponent<DefaultObstacleBehavior>();
+        TrySetupObstacle();
+    }
+
+    /// <summary>
+    /// Reset the obstacle to its base pose and re-arm, WITHOUT advancing the trial or
+    /// firing OnObstacleReset / OnTrialCompleted. Used by "redo this trial" so a fouled
+    /// walk can be re-run cleanly (and no Deferred correction is applied from the bad walk).
+    /// </summary>
+    public void ResetForRedo()
+    {
+        if (_perturbationPivot == null) return;
+        _obstacleBehavior?.Reset(_perturbationPivot);
+        HasMoved = false;
+        _timeSinceMove = 0f;
+        _obstacleOrigin = _perturbationPivot.position;
+        IsArmed = true;
+    }
+
     // ---- lifecycle ----
 
     private void Start()
     {
         _player = Camera.main != null ? Camera.main.transform : null;
 
-        // Create default behavior
-        _defaultBehavior = gameObject.AddComponent<DefaultObstacleBehavior>();
+        // Create default behavior (idempotent — SetManualTarget may have added it already)
+        if (_defaultBehavior == null)
+            _defaultBehavior = GetComponent<DefaultObstacleBehavior>() ?? gameObject.AddComponent<DefaultObstacleBehavior>();
 
         // Try to set up obstacle immediately if available
         TrySetupObstacle();

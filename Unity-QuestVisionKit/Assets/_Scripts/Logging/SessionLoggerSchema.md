@@ -16,7 +16,7 @@ Required on every row:
 | `timestamp_session` | double, seconds | `Time.realtimeSinceStartupAsDouble` minus session start. |
 | `frame_number` | int | `Time.frameCount` at construction. |
 | `event_type` | string | See *Event types* below. |
-| `correction_source` | string | `anchor_baseline`, `controller`, `apriltag`, `optitrack`, or `system`. |
+| `correction_source` | string | `anchor_baseline`, `controller`, `apriltag`, `apriltag_single`, `apriltag_pair`, `optitrack`, or `system`. |
 | `mode` | string | `applied`, `observe`, or `n/a`. |
 
 Sparse columns (only populated for relevant event types):
@@ -116,6 +116,36 @@ Sources gate their own emission. When a source is out of range it emits a single
 `source_state_change` row marking the transition and then goes silent until the
 next transition. This keeps the log honest about what was observed vs. silenced.
 
+### Single/double-tag obstacle placement (`apriltag_single`, `apriltag_pair`)
+
+`ObstaclePlacementController` (the single/double-tag scene) sets `correction_source`
+to the active solver's label — `apriltag_single` (one tag) or `apriltag_pair`
+(two tags; obstacle on the line connecting them). The constellation rung reuses
+`apriltag` once implemented.
+
+Two `state_snapshot` streams are emitted per measurement tick (default 30 Hz),
+distinguished by `mode`:
+
+- `mode=observe` — `anchor_pos_xyz` / `anchor_rot_xyzw` = the **tag-proposed**
+  obstacle base pose this frame (where the tag says the obstacle should be).
+- `mode=applied` — `anchor_pos_xyz` / `anchor_rot_xyzw` = the obstacle base's
+  **actual** (anchor/world-locked) world pose.
+
+`headset_pos_xyz` / `headset_rot_xyzw` are populated on both. The headline
+analysis for this scene is the divergence between the `applied` (stable, what the
+participant sees) and `observe` (live tag) streams over a session — the
+bounded-error question.
+
+Correction application:
+
+- `session_event subtype=obstacle_placed` — once, on first placement. `detail`:
+  `solver=...;variant=Anchored|WorldRoot;policy=Deferred|SmoothedLive|RawLive;pos=x|y|z`.
+- `correction_event` (`mode=applied`, `accepted=1`) — in the Deferred policy, one
+  per held correction applied **between trials** (on obstacle reset, after the
+  participant passes). `delta_position_m` / `delta_rotation_deg` /
+  `correction_applied_m` carry the magnitude moved. In SmoothedLive / RawLive the
+  obstacle is moved live and no per-trial `correction_event` is emitted.
+
 ## Session header
 
 The first `session_event` row (`subtype=session_start`) has a `detail` payload
@@ -156,3 +186,9 @@ On the Quest, sessions land in `Application.persistentDataPath` which maps to
   `state_snapshot`, `sleep_event`, `calibration_event`, `walk_event`. Phase 2
   factories defined but not yet used: `correction_event`,
   `source_state_change`, `validation_walk`, `snap_event`.
+- **v1 (additive, no bump)** — Single/double-tag placement scene adds the
+  `correction_source` values `apriltag_single` / `apriltag_pair`, the
+  `session_event subtype=obstacle_placed`, and the `observe` / `applied`
+  `state_snapshot` convention documented above. No columns changed — files stay
+  `schema_version=1` and older readers remain compatible. See
+  `SingleTagObstacleHandoff.md` for the scene-specific analysis guide.

@@ -105,6 +105,13 @@ public class ObstacleFinesseController : MonoBehaviour
     /// <summary>Read-only view of which obstacle the finesse bindings are currently driving.</summary>
     public FinesseTarget ActiveTarget => activeTarget;
 
+    /// <summary>
+    /// Point the finesse bindings at a runtime-created Transform (the FinesseOffset
+    /// layer in the single-tag placement chain). Overrides the AprilTag/Placer/Controller
+    /// target resolution. Pass null to revert to the enum-based resolution.
+    /// </summary>
+    public void SetManualTarget(Transform target) => manualTarget = target;
+
     public bool FineMode => input && input.IsHeld(OVRInput.Button.PrimaryHandTrigger);
     private float TranslationStep => FineMode ? fineTranslationMeters : coarseTranslationMeters;
     private float RotationStep => FineMode ? fineRotationDegrees : coarseRotationDegrees;

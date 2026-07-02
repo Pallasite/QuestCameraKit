@@ -1,0 +1,241 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &2053625363347814627
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7120217153661797652}
+  - component: {fileID: 3760649081596045103}
+  - component: {fileID: 6584871663056619710}
+  - component: {fileID: 6033049460946740}
+  - component: {fileID: 31299415333935468}
+  - component: {fileID: 3453745933199870206}
+  - component: {fileID: 6762133713987894630}
+  - component: {fileID: 5124365008574743862}
+  - component: {fileID: 2439007242928577210}
+  m_Layer: 0
+  m_Name: AprilTagDetection (SingleTag)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7120217153661797652
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2053625363347814627}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &3760649081596045103
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2053625363347814627}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3ac159703e3930e438687263b7a44f0e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AprilTagScanner
+  sampleFactor: 2
+  tagSizeMeters: 0.171
+--- !u!114 &6584871663056619710
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2053625363347814627}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 09420e86413e14ef6a1192b572643886, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::MarkerPool
+  markerPrefab: {fileID: 5770893990329113263, guid: c1066bdbdc55a0c45a75cc6691eb62af, type: 3}
+  poolSize: 4
+--- !u!114 &6033049460946740
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2053625363347814627}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b4e0ece85cdfd5e4b90272f53d62eaf3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AprilTagDisplayManager
+  placementMode: 0
+  markerDisplayScale: 1
+  markerPool: {fileID: 0}
+  proximityGate: {fileID: 0}
+  maxScanDistanceMeters: 2.5
+  scanDistanceHysteresisMeters: 0.5
+  gateBypassDuringStreaming: 1
+  enableScanning: 1
+  scanRateHz: 5
+--- !u!114 &31299415333935468
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2053625363347814627}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 52a56cc40ca826d4897b321556d5dcca, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AprilTagWireframeVisualizer
+  wireframeMaterial: {fileID: 2100000, guid: 007914e691e51ed41a4b0269a6ab175f, type: 2}
+  tagSizeMeters: 0.097
+  sizeSource: {fileID: 0}
+  corrector: {fileID: 0}
+  displayMode: 1
+  colorByQuality: 1
+  streamingQualityGradient:
+    serializedVersion: 2
+    key0: {r: 1, g: 0.2, b: 0.2, a: 1}
+    key1: {r: 1, g: 0.9, b: 0.2, a: 1}
+    key2: {r: 0.2, g: 1, b: 0.3, a: 0}
+    key3: {r: 0, g: 0, b: 0, a: 0}
+    key4: {r: 0, g: 0, b: 0, a: 0}
+    key5: {r: 0, g: 0, b: 0, a: 0}
+    key6: {r: 0, g: 0, b: 0, a: 0}
+    key7: {r: 0, g: 0, b: 0, a: 0}
+    ctime0: 0
+    ctime1: 32768
+    ctime2: 65535
+    ctime3: 0
+    ctime4: 0
+    ctime5: 0
+    ctime6: 0
+    ctime7: 0
+    atime0: 0
+    atime1: 65535
+    atime2: 0
+    atime3: 0
+    atime4: 0
+    atime5: 0
+    atime6: 0
+    atime7: 0
+    m_Mode: 0
+    m_ColorSpace: -1
+    m_NumColorKeys: 3
+    m_NumAlphaKeys: 2
+  streamingQualityFullObservationCount: 10
+  residualQualityGradient:
+    serializedVersion: 2
+    key0: {r: 0.2, g: 1, b: 0.3, a: 1}
+    key1: {r: 1, g: 0.9, b: 0.2, a: 1}
+    key2: {r: 1, g: 0.2, b: 0.2, a: 0}
+    key3: {r: 0, g: 0, b: 0, a: 0}
+    key4: {r: 0, g: 0, b: 0, a: 0}
+    key5: {r: 0, g: 0, b: 0, a: 0}
+    key6: {r: 0, g: 0, b: 0, a: 0}
+    key7: {r: 0, g: 0, b: 0, a: 0}
+    ctime0: 0
+    ctime1: 32768
+    ctime2: 65535
+    ctime3: 0
+    ctime4: 0
+    ctime5: 0
+    ctime6: 0
+    ctime7: 0
+    atime0: 0
+    atime1: 65535
+    atime2: 0
+    atime3: 0
+    atime4: 0
+    atime5: 0
+    atime6: 0
+    atime7: 0
+    m_Mode: 0
+    m_ColorSpace: -1
+    m_NumColorKeys: 3
+    m_NumAlphaKeys: 2
+  residualQualityFullScaleMeters: 0.003
+--- !u!114 &3453745933199870206
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2053625363347814627}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2d8affdff7ba47d892cc734baac9ac71, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: meta.xr.mrutilitykit::Meta.XR.EnvironmentRaycastManager
+  CustomTrackingSpace: {fileID: 0}
+--- !u!114 &6762133713987894630
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2053625363347814627}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ef9a7893e57c04c0db4114c70954b915, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: meta.xr.mrutilitykit::Meta.XR.PassthroughCameraAccess
+  CameraPosition: 0
+  RequestedResolution: {x: 1280, y: 1280}
+  _maxFramerate: 60
+  TargetMaterial: {fileID: 0}
+  _texturePropertyName: 
+--- !u!114 &5124365008574743862
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2053625363347814627}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ef9a7893e57c04c0db4114c70954b915, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: meta.xr.mrutilitykit::Meta.XR.PassthroughCameraAccess
+  CameraPosition: 1
+  RequestedResolution: {x: 1280, y: 1280}
+  _maxFramerate: 60
+  TargetMaterial: {fileID: 0}
+  _texturePropertyName: 
+--- !u!114 &2439007242928577210
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2053625363347814627}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dc21d8ff4040d71469d1a426252dec76, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StereoAprilTagScanner
+  leftCamera: {fileID: 6762133713987894630}
+  rightCamera: {fileID: 5124365008574743862}
+  sampleFactor: 2
+  decimation: 2
+  minDecisionMargin: 30
+  maxFrameTimeDeltaMs: 30
+  tagSizeMeters: 0.171
+  calibrationSampleFactor: 2
+  calibrationDecimation: 2
+  calibrationFrameCount: 8
+  acquireTimeoutSeconds: 2
+  rotationSolver: 1

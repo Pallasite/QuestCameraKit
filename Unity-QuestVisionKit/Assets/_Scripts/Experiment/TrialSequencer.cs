@@ -79,6 +79,16 @@ public class TrialSequencer : MonoBehaviour
     }
 
     /// <summary>
+    /// Re-run the current trial: reset the obstacle to base (no advance) and reload the
+    /// same condition. Used by the experimenter to redo a fouled walk.
+    /// </summary>
+    public void RedoCurrentTrial()
+    {
+        if (obstacleController != null) obstacleController.ResetForRedo();
+        LoadTrial(CurrentTrialIndex);
+    }
+
+    /// <summary>
     /// Load a specific trial by index. If the index is out of range,
     /// fires <see cref="OnSequenceComplete"/>.
     /// </summary>
