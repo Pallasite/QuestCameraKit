@@ -52,9 +52,13 @@ pipeline + session-logging infrastructure has been built up on the
    user WIP (`.unity` scene edits, local analysis dumps, Word lock files) that
    should not be swept into commits.
 
-## Plan file
+## Current work + session handoff
 
-The multi-phase implementation log lives at
-`C:/Users/pallasite/.claude/plans/this-has-been-great-smooth-lemur.md`. Read
-the relevant phase before making non-trivial changes to the build pipeline,
-session-logging stack, or `LogAnalysisHandoff.md`.
+Active work is the **`SingleTagObstacle` branch** (simplified single/double-
+AprilTag obstacle placement). On any machine, read
+`Unity-QuestVisionKit/Docs/SessionHandoff_SingleTagObstacle.md` **first** — it
+is the portable session handoff: what's built, what's next, per-machine setup
+(build config, Unity MCP registration), and hard-won Unity-MCP gotchas.
+
+(Historical note: earlier machine-local plan files under `~/.claude/plans/` do
+not travel with the repo; the handoff doc above supersedes them.)
