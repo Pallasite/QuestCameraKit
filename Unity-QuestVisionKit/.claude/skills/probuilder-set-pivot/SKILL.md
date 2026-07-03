@@ -1,16 +1,27 @@
 ---
 name: probuilder-set-pivot
-description: |-
-  Changes the pivot (origin) point of a ProBuilder mesh.
-  The mesh geometry is adjusted so the pivot moves without changing the visual position.
-  
-  Examples:
-  - Center the pivot: pivotLocation=Center
-  - Set pivot to first vertex: pivotLocation=FirstVertex
-  - Set custom pivot: pivotLocation=Custom, customPosition=(0, 0, 0)
+description: Move the pivot (origin) of a `ProBuilderMesh` without shifting the visible geometry. Choose `Center` (mesh bounds), `FirstVertex`, or `Custom` (world-space position). The mesh data is rebaked so the visual position stays fixed.
 ---
 
 # Set the pivot point of a ProBuilder mesh
+
+Move the pivot (origin) of a `ProBuilderMesh` without shifting the visible geometry. The mesh data is rebaked so the visual position stays fixed while the GameObject's transform origin moves to the new pivot.
+
+## Inputs
+
+- `gameObjectRef` — the GameObject hosting the `ProBuilderMesh` component.
+- `pivotLocation` — `MeshPivotLocation` enum: `Center` (mesh bounds center), `FirstVertex`, or `Custom`.
+- `customPosition` — required when `pivotLocation = Custom`. World-space pivot position.
+
+## Examples
+
+- Center the pivot: `pivotLocation=Center`.
+- Set pivot to first vertex: `pivotLocation=FirstVertex`.
+- Set custom pivot: `pivotLocation=Custom`, `customPosition=(0, 0, 0)`.
+
+## Behavior
+
+The mesh is rebuilt (`ToMesh` → `Refresh`), dirty-flagged, and the Editor repaints. The whole call runs on the Unity main thread.
 
 ## How to Call
 

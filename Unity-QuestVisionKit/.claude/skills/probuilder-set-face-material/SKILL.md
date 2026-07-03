@@ -1,16 +1,27 @@
 ---
 name: probuilder-set-face-material
-description: |-
-  Assigns a material to specific faces of a ProBuilder mesh.
-  You can select faces by index OR by direction (semantic selection).
-  This enables multi-material meshes where different faces have different materials.
-  
-  Examples:
-  - Set material on top face: faceDirection="up"
-  - Set material on specific faces: faceIndices=[0, 2, 4]
+description: Assign a material to specific faces of a `ProBuilderMesh`, enabling multi-material meshes (e.g., grass on top, dirt on sides). Supply either `faceIndices` (explicit) or `faceDirection` (semantic); exactly one is required.
 ---
 
 # Set material on ProBuilder faces
+
+Assign a material to specific faces of a `ProBuilderMesh`, enabling multi-material meshes where different faces have different materials (e.g., grass on top, dirt on the sides).
+
+## Inputs
+
+- `gameObjectRef` — the GameObject hosting the `ProBuilderMesh` component.
+- `materialPath` — project path to the material asset (e.g., `Assets/Materials/Grass.mat`) or a bare material name. Required.
+- `faceIndices` — explicit array of face indices.
+- `faceDirection` — semantic alternative (`Up`, `Down`, `Left`, `Right`, `Forward`, `Back`). Exactly one of `faceIndices` / `faceDirection` is required.
+
+## Examples
+
+- Set material on the top face: `faceDirection="up"`.
+- Set material on specific faces: `faceIndices=[0, 2, 4]`.
+
+## Behavior
+
+The mesh is rebuilt (`ToMesh` → `Refresh`), dirty-flagged, and the Editor repaints. The whole call runs on the Unity main thread.
 
 ## How to Call
 

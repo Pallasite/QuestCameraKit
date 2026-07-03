@@ -1,12 +1,21 @@
 ---
 name: probuilder-bevel
-description: |-
-  Bevels selected edges of a ProBuilder mesh, creating chamfered corners.
-  Use ProBuilder_GetMeshInfo to identify edges by their vertex pairs.
-  Beveling replaces sharp edges with angled faces for a smoother appearance.
+description: Bevel (chamfer) selected edges of a `ProBuilderMesh`, replacing each sharp edge with an angled face. Identify edges by their `[vertexA, vertexB]` index pairs — use 'probuilder-get-mesh-info' to discover them. `amount` is clamped to (0, 1).
 ---
 
 # Bevel ProBuilder edges
+
+Bevel (chamfer) selected edges of a `ProBuilderMesh`, replacing each sharp edge with an angled face for a smoother appearance. Use 'probuilder-get-mesh-info' first to discover edges by their vertex pairs.
+
+## Inputs
+
+- `gameObjectRef` — the GameObject hosting the `ProBuilderMesh` component.
+- `edges` — array of edge definitions; each edge is `[vertexA, vertexB]`. Example: `[[0,1], [2,3]]` bevels two edges.
+- `amount` — bevel strength in the range (0, 1). `0.001` is barely visible, `0.999` reaches face center. Recommended `0.05`–`0.2`. Internally clamped.
+
+## Behavior
+
+Vertex indices are validated against `vertexCount`. After `BevelEdges` runs, the mesh is rebuilt (`ToMesh` → `Refresh`), the `ProBuilderMesh` and GameObject are marked dirty, and Editor windows repaint. Returns the number of edges processed, the clamped amount, and post-op face/vertex/edge counts. The whole call runs on the Unity main thread.
 
 ## How to Call
 

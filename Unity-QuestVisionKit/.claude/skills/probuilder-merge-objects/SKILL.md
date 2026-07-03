@@ -1,14 +1,24 @@
 ---
 name: probuilder-merge-objects
-description: |-
-  Combines multiple ProBuilder meshes into a single mesh.
-  Useful for optimizing draw calls or creating a unified object from parts.
-  The first mesh in the list becomes the target that others merge into.
-  
-  Example: Merge a table made of separate leg and top meshes into one object.
+description: Combine multiple `ProBuilderMesh` GameObjects into one merged mesh. The first GameObject in the list becomes the merge target. Source GameObjects are deleted by default. Useful for optimizing draw calls and unifying composite props.
 ---
 
 # Merge multiple ProBuilder meshes into one
+
+Combine multiple `ProBuilderMesh` GameObjects into a single merged mesh. The first GameObject in `gameObjectRefs` becomes the merge target — subsequent meshes are absorbed into it. Useful for optimizing draw calls or creating a unified object from parts.
+
+## Inputs
+
+- `gameObjectRefs` — array of GameObject references (≥2). Each must carry a `ProBuilderMesh` component. The first reference is the merge target.
+- `deleteSourceObjects` — when `true` (default), delete the non-target source GameObjects after merging. Set `false` to keep them in the scene.
+
+## Example
+
+Merge a table assembled from four leg meshes and a top into a single GameObject for shipping.
+
+## Behavior
+
+All meshes are rebuilt (`ToMesh` → `Refresh`), the resulting GameObject is marked dirty, and the Editor repaints. The whole call runs on the Unity main thread.
 
 ## How to Call
 

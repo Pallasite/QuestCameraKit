@@ -1,8 +1,8 @@
 {
   "dependencies": {
     "com.ivanmurzak.unity.mcp": {
-      "version": "0.82.2",
-      "depth": 0,
+      "version": "0.82.3",
+      "depth": 1,
       "source": "registry",
       "dependencies": {
         "com.unity.test-framework": "1.1.33",
@@ -11,13 +11,43 @@
       },
       "url": "https://package.openupm.com"
     },
-    "com.ivanmurzak.unity.mcp.probuilder": {
-      "version": "1.0.72",
+    "com.ivanmurzak.unity.mcp.animation": {
+      "version": "1.2.23",
       "depth": 0,
       "source": "registry",
       "dependencies": {
-        "com.ivanmurzak.unity.mcp": "0.69.0",
+        "com.ivanmurzak.unity.mcp": "0.82.3",
+        "com.unity.modules.animation": "1.0.0"
+      },
+      "url": "https://package.openupm.com"
+    },
+    "com.ivanmurzak.unity.mcp.inputsystem": {
+      "version": "1.0.9",
+      "depth": 0,
+      "source": "registry",
+      "dependencies": {
+        "com.ivanmurzak.unity.mcp": "0.82.3",
+        "com.unity.inputsystem": "1.7.0"
+      },
+      "url": "https://package.openupm.com"
+    },
+    "com.ivanmurzak.unity.mcp.probuilder": {
+      "version": "1.2.23",
+      "depth": 0,
+      "source": "registry",
+      "dependencies": {
+        "com.ivanmurzak.unity.mcp": "0.82.3",
         "com.unity.probuilder": "5.2.4"
+      },
+      "url": "https://package.openupm.com"
+    },
+    "com.ivanmurzak.unity.mcp.timeline": {
+      "version": "1.0.9",
+      "depth": 0,
+      "source": "registry",
+      "dependencies": {
+        "com.ivanmurzak.unity.mcp": "0.82.3",
+        "com.unity.timeline": "1.8.12"
       },
       "url": "https://package.openupm.com"
     },
@@ -258,6 +288,18 @@
       "dependencies": {
         "com.unity.ugui": "2.0.0"
       }
+    },
+    "com.unity.timeline": {
+      "version": "1.8.12",
+      "depth": 1,
+      "source": "registry",
+      "dependencies": {
+        "com.unity.modules.audio": "1.0.0",
+        "com.unity.modules.director": "1.0.0",
+        "com.unity.modules.animation": "1.0.0",
+        "com.unity.modules.particlesystem": "1.0.0"
+      },
+      "url": "https://packages.unity.com"
     },
     "com.unity.ugui": {
       "version": "2.0.0",

@@ -1,16 +1,28 @@
 ---
 name: probuilder-extrude
-description: |-
-  Extrudes selected faces of a ProBuilder mesh along their normals.
-  You can select faces by index OR by direction (semantic selection).
-  Extrusion creates new geometry by pushing faces outward (or inward with negative distance).
-  
-  Examples:
-  - Extrude top face: faceDirection="up"
-  - Extrude specific faces: faceIndices=[0, 2, 4]
+description: Extrude selected faces of a `ProBuilderMesh` along their normals, creating new geometry. Supply either `faceIndices` (explicit) or `faceDirection` (semantic); exactly one is required. Positive `distance` extrudes outward, negative inward.
 ---
 
 # Extrude ProBuilder faces
+
+Extrude selected faces of a `ProBuilderMesh` along their normals, creating new geometry by pushing faces outward (positive distance) or inward (negative distance). Faces can be selected explicitly by index or semantically by direction.
+
+## Inputs
+
+- `gameObjectRef` — the GameObject hosting the `ProBuilderMesh` component.
+- `faceIndices` — explicit array of face indices to extrude.
+- `faceDirection` — semantic alternative (`Up`, `Down`, `Left`, `Right`, `Forward`, `Back`). Exactly one of `faceIndices` / `faceDirection` is required.
+- `distance` — extrusion distance. Positive = outward, negative = inward. Default `0.5`.
+- `extrudeMethod` — `IndividualFaces` (each face extrudes independently), `FaceNormal` (faces extrude as a group along the averaged normal — the default), or `VertexNormal` (vertices move along their normals).
+
+## Examples
+
+- Extrude the top face up by 1 unit: `faceDirection="up"`, `distance=1`.
+- Extrude specific faces: `faceIndices=[0, 2, 4]`.
+
+## Behavior
+
+The mesh is rebuilt (`ToMesh` → `Refresh`), dirty-flagged, and the Editor repaints. The whole call runs on the Unity main thread.
 
 ## How to Call
 

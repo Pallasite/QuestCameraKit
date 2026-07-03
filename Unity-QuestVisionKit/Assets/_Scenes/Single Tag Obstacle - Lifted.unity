@@ -4525,7 +4525,7 @@ MonoBehaviour:
   scanDistanceHysteresisMeters: 0.5
   gateBypassDuringStreaming: 1
   enableScanning: 1
-  scanRateHz: 5
+  scanRateHz: 40
 --- !u!4 &665711654
 Transform:
   m_ObjectHideFlags: 0
@@ -4636,9 +4636,9 @@ MonoBehaviour:
   streamingQualityFullObservationCount: 10
   residualQualityGradient:
     serializedVersion: 2
-    key0: {r: 0.2, g: 1, b: 0.3, a: 1}
+    key0: {r: 1, g: 0.19999999, b: 0.73584634, a: 1}
     key1: {r: 1, g: 0.9, b: 0.2, a: 1}
-    key2: {r: 1, g: 0.2, b: 0.2, a: 0}
+    key2: {r: 0, g: 1, b: 1, a: 0}
     key3: {r: 0, g: 0, b: 0, a: 0}
     key4: {r: 0, g: 0, b: 0, a: 0}
     key5: {r: 0, g: 0, b: 0, a: 0}
@@ -4688,7 +4688,7 @@ MonoBehaviour:
   calibrationDecimation: 2
   calibrationFrameCount: 8
   acquireTimeoutSeconds: 2
-  rotationSolver: 1
+  rotationSolver: 0
 --- !u!114 &665711661
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -9996,7 +9996,7 @@ MonoBehaviour:
   gateMaxRotationSpreadDegrees: 2
   gateMaxObservationAgeSeconds: 0.5
   smoothingRatePerSecond: 4
-  hideUntilPlaced: 1
+  hideUntilPlaced: 0
   logMeasurements: 1
   measurementLogRateHz: 30
 --- !u!4 &1624277466

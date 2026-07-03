@@ -1,16 +1,29 @@
 ---
 name: probuilder-flip-normals
-description: |-
-  Reverses the normal direction of selected faces, flipping them inside-out.
-  Useful for creating interior spaces or fixing inverted faces.
-  
-  Examples:
-  - Flip all faces: leave faceIndices and faceDirection empty
-  - Flip top face only: faceDirection=Up
-  - Flip specific faces: faceIndices=[0, 2, 4]
+description: Reverse the normal direction of selected faces in a `ProBuilderMesh`, flipping them inside-out. Useful for creating interior spaces (a room from the inside of a cube) or fixing inverted faces. Defaults to all faces when no selection is supplied.
 ---
 
 # Flip face normals in a ProBuilder mesh
+
+Reverse the normal direction of selected faces in a `ProBuilderMesh`, flipping them inside-out. Useful for creating interior spaces (a room from the inside of a cube) or fixing inverted faces produced by other operations.
+
+## Inputs
+
+- `gameObjectRef` — the GameObject hosting the `ProBuilderMesh` component.
+- `faceIndices` — optional explicit list of face indices to flip.
+- `faceDirection` — optional semantic alternative (`Up`, `Down`, `Left`, `Right`, `Forward`, `Back`).
+
+When both are omitted, **every face** is flipped.
+
+## Examples
+
+- Flip all faces: leave both `faceIndices` and `faceDirection` empty.
+- Flip top face only: `faceDirection=Up`.
+- Flip specific faces: `faceIndices=[0, 2, 4]`.
+
+## Behavior
+
+The mesh is rebuilt (`ToMesh` → `Refresh`), dirty-flagged, and the Editor repaints. The whole call runs on the Unity main thread.
 
 ## How to Call
 

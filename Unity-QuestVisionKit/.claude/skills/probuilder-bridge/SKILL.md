@@ -1,14 +1,26 @@
 ---
 name: probuilder-bridge
-description: |-
-  Creates a new face connecting two edges.
-  Useful for connecting separate parts of geometry or filling gaps.
-  
-  Example:
-  - edgeA=[0,1], edgeB=[4,5] creates a quad face between the two edges
+description: Create a single new face that bridges two existing edges of a `ProBuilderMesh`. Useful for connecting separate parts of geometry or filling gaps. Pair with 'probuilder-get-mesh-info' to discover valid edges.
 ---
 
 # Bridge two edges in a ProBuilder mesh
+
+Create a single new face that bridges two existing edges of a `ProBuilderMesh`. Useful for connecting separate parts of geometry or filling gaps between disjoint sections. Pair with 'probuilder-get-mesh-info' to discover valid edges first.
+
+## Inputs
+
+- `gameObjectRef` — the GameObject hosting the `ProBuilderMesh` component.
+- `edgeA` — first edge as `[vertexA, vertexB]`.
+- `edgeB` — second edge as `[vertexA, vertexB]`.
+- `allowNonManifold` — when `true`, permits the bridge to share an edge with more than two faces. Defaults to `false`.
+
+## Example
+
+`edgeA=[0,1]`, `edgeB=[4,5]` creates a quad face between the two edges.
+
+## Behavior
+
+The mesh is rebuilt (`ToMesh` → `Refresh`), dirty-flagged, and the Editor repaints. Returns the index of the new face, before/after face counts, and post-op vertex/edge counts. Throws when the bridge cannot be formed (e.g., edges already connected or non-manifold check blocked it). The whole call runs on the Unity main thread.
 
 ## How to Call
 

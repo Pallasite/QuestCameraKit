@@ -1,22 +1,32 @@
 ---
 name: probuilder-create-poly-shape
-description: |-
-  Creates a 3D mesh from a 2D polygon outline. Perfect for:
-  - Floor plans and room layouts
-  - Custom terrain patches
-  - Architectural elements (walls, platforms)
-  - Any shape that can be defined by a 2D outline
-  
-  The polygon is defined by an array of 2D points (x,z coordinates) that form the outline.
-  The shape is then extruded upward by the specified height.
-  
-  Examples:
-  - Rectangle: points=[[0,0], [4,0], [4,3], [0,3]] height=2.5
-  - L-shape: points=[[0,0], [3,0], [3,2], [1,2], [1,3], [0,3]] height=3
-  - Triangle: points=[[0,0], [2,0], [1,1.7]] height=1
+description: Create a 3D `ProBuilderMesh` from a 2D polygon outline (x,z points) extruded upward by `height`. Perfect for floor plans, room layouts, terrain patches, walls, platforms — any shape definable by a 2D outline. Requires ≥3 points.
 ---
 
 # Create a ProBuilder shape from polygon points
+
+Create a 3D `ProBuilderMesh` from a 2D polygon outline (x,z points) extruded upward by `height`. Perfect for:
+
+- Floor plans and room layouts.
+- Custom terrain patches.
+- Architectural elements (walls, platforms).
+- Any shape that can be defined by a 2D outline.
+
+## Inputs
+
+- `points` — array of 2D points as `[x, z]`. Minimum 3 points; should be in clockwise or counter-clockwise order.
+- `height` — extrusion height upward (Y axis). Default `1`.
+- `name` — optional GameObject name.
+- `parentGameObjectRef` — optional parent; root of the scene when omitted.
+- `position`, `rotation` — optional `Vector3` transform values (rotation in euler degrees).
+- `flipNormals` — when `true`, flip the resulting face normals so the shape points inward.
+- `isLocalSpace` — when `true`, position/rotation are interpreted in the parent's local space.
+
+## Examples
+
+- Rectangle: `points=[[0,0], [4,0], [4,3], [0,3]]`, `height=2.5`.
+- L-shape: `points=[[0,0], [3,0], [3,2], [1,2], [1,3], [0,3]]`, `height=3`.
+- Triangle: `points=[[0,0], [2,0], [1,1.7]]`, `height=1`.
 
 ## How to Call
 

@@ -1,11 +1,24 @@
 ---
 name: probuilder-create-shape
-description: |-
-  Creates a new ProBuilder mesh shape in the scene. ProBuilder shapes are editable 3D meshes
-  that can be modified using other ProBuilder tools like extrusion, beveling, etc.
+description: Create a new editable `ProBuilderMesh` GameObject in the active scene from a `ShapeType` primitive (Cube, Cylinder, Sphere, Plane, Prism, Cone, Stair, etc.). Optionally set name, parent, transform, size, and world/local space.
 ---
 
 # Create a ProBuilder shape
+
+Create a new editable `ProBuilderMesh` GameObject in the active scene. ProBuilder shapes are editable 3D meshes that can be further modified with the rest of the ProBuilder tools (extrude, bevel, subdivide, etc.).
+
+## Inputs
+
+- `shapeType` — `ShapeType` enum (Cube, Cylinder, Sphere, Plane, Prism, Cone, Stair, Door, Pipe, Arch, Sprite, Torus, etc.).
+- `name` — optional GameObject name.
+- `parentGameObjectRef` — optional parent; root of the scene when omitted.
+- `position`, `rotation`, `scale` — optional `Vector3` transform values. Rotation is euler degrees. Defaults: zero / zero / one.
+- `size` — `Vector3` width/height/depth of the generated shape. Default `(1, 1, 1)`.
+- `isLocalSpace` — when `true`, position/rotation/scale are interpreted in the parent's local space; otherwise world space.
+
+## Behavior
+
+Uses `ShapeGenerator.CreateShape` with `PivotLocation.Center`, applies the transform values, rebuilds the mesh, marks dirty, and repaints the Editor. The whole call runs on the Unity main thread.
 
 ## How to Call
 

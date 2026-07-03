@@ -1,16 +1,26 @@
 ---
 name: probuilder-delete-faces
-description: |-
-  Deletes selected faces from a ProBuilder mesh.
-  You can select faces by index OR by direction (semantic selection).
-  Deleting faces creates holes in the mesh or removes geometry entirely.
-  
-  Examples:
-  - Delete bottom face: faceDirection="down"
-  - Delete specific faces: faceIndices=[0, 2, 4]
+description: Delete selected faces from a `ProBuilderMesh`, creating holes or removing geometry. Supply either `faceIndices` (explicit list) or `faceDirection` (semantic selection); exactly one is required.
 ---
 
 # Delete ProBuilder faces
+
+Delete selected faces from a `ProBuilderMesh`, creating holes or removing geometry entirely. Faces can be selected explicitly by index or semantically by direction.
+
+## Inputs
+
+- `gameObjectRef` — the GameObject hosting the `ProBuilderMesh` component.
+- `faceIndices` — explicit array of face indices to delete. Use 'probuilder-get-mesh-info' to discover valid indices.
+- `faceDirection` — semantic alternative (`Up`, `Down`, `Left`, `Right`, `Forward`, `Back`). Exactly one of `faceIndices` / `faceDirection` is required.
+
+## Examples
+
+- Delete the bottom face: `faceDirection="down"`.
+- Delete specific faces: `faceIndices=[0, 2, 4]`.
+
+## Behavior
+
+The mesh is rebuilt (`ToMesh` → `Refresh`), the `ProBuilderMesh` and GameObject are marked dirty, and Editor windows repaint. The whole call runs on the Unity main thread.
 
 ## How to Call
 

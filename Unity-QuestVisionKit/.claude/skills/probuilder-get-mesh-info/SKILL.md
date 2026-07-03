@@ -1,15 +1,23 @@
 ---
 name: probuilder-get-mesh-info
-description: |-
-  Retrieves information about a ProBuilder mesh including faces, vertices, and edges.
-  Use detail="summary" for a token-efficient overview showing face directions.
-  Use detail="full" for detailed face-by-face information.
-  
-  TIP: With semantic face selection (faceDirection parameter) in Extrude/DeleteFaces/SetFaceMaterial,
-  you often don't need GetMeshInfo at all - just use faceDirection="up" etc. directly.
+description: "Inspect a `ProBuilderMesh` — face/vertex/edge counts plus optional face-by-face detail. Use `detail=\"summary\"` for a token-efficient overview, `detail=\"full\"` for detailed face data. Often skippable when other tools accept `faceDirection` semantic selection."
 ---
 
 # Get ProBuilder mesh information
+
+Inspect a `ProBuilderMesh` — totals (face/vertex/edge counts) plus optional face-by-face detail (per-face vertex positions, edges, semantic direction). The other ProBuilder tools accept `faceDirection` (semantic selection like `"up"`, `"down"`) — when that suffices, you can skip this call entirely.
+
+## Inputs
+
+- `gameObjectRef` — the GameObject hosting the `ProBuilderMesh` component.
+- `detail` — `Summary` (default, cheap overview with face directions) or `Full` (per-face data).
+- `includeVertexPositions` — `Full` only. Include each face's vertex positions in the response.
+- `includeEdges` — `Full` only. Include each face's edges. Default `true`.
+- `maxFacesToShow` — `Full` only. Cap on face-detail entries (default `20`; pass `-1` for all). Keeps the response small for high-face meshes.
+
+## Tip
+
+With semantic face selection (`faceDirection`) available on Extrude / DeleteFaces / SetFaceMaterial and friends, you often don't need this tool — just pass `faceDirection="up"` etc. directly.
 
 ## How to Call
 

@@ -1,15 +1,23 @@
 ---
 name: probuilder-subdivide-edges
-description: |-
-  Inserts new vertices on edges, subdividing them into smaller segments.
-  Useful for adding detail to specific edges for further manipulation.
-  
-  Examples:
-  - Subdivide all edges of top face: faceDirection="up", subdivisions=2
-  - Subdivide specific edges: edges=[[0,1], [2,3]], subdivisions=1
+description: Insert new vertices on selected edges of a `ProBuilderMesh`, splitting each edge into smaller segments. Supply either `edges` (explicit list) or `faceDirection` (subdivides all edges of faces facing that direction); exactly one is required.
 ---
 
 # Subdivide edges in a ProBuilder mesh
+
+Insert new vertices on selected edges of a `ProBuilderMesh`, subdividing each into smaller segments. Useful for adding detail to specific edges for further manipulation (extrude, bevel, etc.).
+
+## Inputs
+
+- `gameObjectRef` — the GameObject hosting the `ProBuilderMesh` component.
+- `edges` — explicit list of edges to subdivide, each as `[vertexA, vertexB]`. Use 'probuilder-get-mesh-info' to discover valid edges.
+- `faceDirection` — semantic alternative: subdivides all edges of faces pointing this direction (`Up`, `Down`, `Left`, `Right`, `Forward`, `Back`). Exactly one of `edges` / `faceDirection` is required.
+- `subdivisions` — number of subdivisions per edge. `1` splits each edge in half, `2` into thirds, and so on. Default `1`.
+
+## Examples
+
+- Subdivide all edges of the top face: `faceDirection="up"`, `subdivisions=2`.
+- Subdivide specific edges: `edges=[[0,1], [2,3]]`, `subdivisions=1`.
 
 ## How to Call
 
