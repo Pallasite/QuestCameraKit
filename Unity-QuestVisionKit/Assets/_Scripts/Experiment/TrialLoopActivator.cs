@@ -13,6 +13,10 @@ using UnityEngine;
 /// Optionally gates activation on <see cref="ObstaclePlacementController.IsPlaced"/>,
 /// so participant trials don't begin until the obstacle has been calibrated to the tag.
 /// </summary>
+[System.Obsolete("Replaced by SessionFlowController: arming now requires an explicit Start-trials " +
+                 "action instead of firing the moment placement lands (which let proximity trials " +
+                 "trigger during finesse-tuning). Removed from the single-tag scenes; file kept one " +
+                 "pass for reference, then deleted.")]
 [DisallowMultipleComponent]
 public sealed class TrialLoopActivator : MonoBehaviour
 {

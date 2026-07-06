@@ -56,7 +56,9 @@ public sealed class SessionLogger : MonoBehaviour
     private readonly ConcurrentQueue<LogEvent> _queue = new ConcurrentQueue<LogEvent>();
     private Thread _writerThread;
     private volatile bool _running;
+    private volatile bool _flushRequested;
     private string _resolvedPath;
+    private string _participantSource = "inspector";
     private double _sessionStartTime;
     private long _enqueuedCount;
     private long _writtenCount;
@@ -99,6 +101,11 @@ public sealed class SessionLogger : MonoBehaviour
 
         try
         {
+            // Per-participant override, mirroring TrialLoader's runtime-push
+            // pattern: `adb push participant.txt` next to trial_conditions.csv.
+            // First non-empty line wins; absent file = Inspector value as before.
+            TryApplyParticipantFileOverride();
+
             var unixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var fileName = $"{SanitizeForFilename(participantId)}_{unixMs}.csv";
             // Route through SessionPaths so the CSV lands inside the per-launch
@@ -110,10 +117,11 @@ public sealed class SessionLogger : MonoBehaviour
             _writerThread.Start();
 
             var headerDetail = string.Format(CultureInfo.InvariantCulture,
-                "build={0};scene={1};participant={2};unix_ms={3};schema_version={4};flush_interval_s={5};notes={6}",
+                "build={0};scene={1};participant={2};participant_source={3};unix_ms={4};schema_version={5};flush_interval_s={6};notes={7}",
                 Application.version,
                 SceneManager.GetActiveScene().name,
                 participantId,
+                _participantSource,
                 unixMs,
                 LogEvent.CurrentSchemaVersion,
                 flushIntervalSeconds.ToString("F2", CultureInfo.InvariantCulture),
@@ -151,6 +159,57 @@ public sealed class SessionLogger : MonoBehaviour
         _running = false;
         try { _writerThread?.Join(TimeSpan.FromSeconds(3)); }
         catch { /* shutdown best-effort */ }
+    }
+
+    /// <summary>
+    /// On Quest the OS pauses (rather than quits) when the headset is doffed —
+    /// the writer's flush window is exactly the data that used to go missing at
+    /// session end. On pause: mark the moment in the CSV, ask the writer to
+    /// flush now, and give it a bounded moment to drain before Android may
+    /// suspend our threads. Best-effort: shrinks the loss window, cannot
+    /// guarantee zero on a hard suspend.
+    /// </summary>
+    private void OnApplicationPause(bool paused)
+    {
+        if (!_running) return;
+
+        if (paused)
+        {
+            Enqueue(LogEvent.SessionEvent("application_pause"));
+            _flushRequested = true;
+
+            var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(250);
+            while (_flushRequested && DateTime.UtcNow < deadline)
+            {
+                Thread.Sleep(10);
+            }
+        }
+        else
+        {
+            Enqueue(LogEvent.SessionEvent("application_resume"));
+        }
+    }
+
+    private void TryApplyParticipantFileOverride()
+    {
+        try
+        {
+            var path = Path.Combine(Application.persistentDataPath, "participant.txt");
+            if (!File.Exists(path)) return;
+            foreach (var line in File.ReadAllLines(path))
+            {
+                var trimmed = line.Trim();
+                if (trimmed.Length == 0) continue;
+                participantId = trimmed;
+                _participantSource = "file";
+                Debug.Log($"[SessionLogger] participantId overridden from participant.txt: '{participantId}'");
+                return;
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[SessionLogger] participant.txt read failed (using Inspector value): {e.Message}");
+        }
     }
 
     // ---- writer thread ----
@@ -197,11 +256,16 @@ public sealed class SessionLogger : MonoBehaviour
                     }
                 }
 
-                if (wroteAny && (DateTime.UtcNow - lastFlush) >= flushSpan)
+                if (_flushRequested || (wroteAny && (DateTime.UtcNow - lastFlush) >= flushSpan))
                 {
                     try { writer.Flush(); }
                     catch (Exception ex) { Debug.LogWarning($"[SessionLogger] Flush exception (swallowed): {ex.Message}"); }
                     lastFlush = DateTime.UtcNow;
+                    // Only acknowledge the forced flush once the queue is truly
+                    // drained — an event enqueued between the dequeue loop and
+                    // this flush would otherwise be stranded unflushed while the
+                    // pause handler stops waiting.
+                    if (_queue.IsEmpty) _flushRequested = false;
                 }
 
                 Thread.Sleep(50);
