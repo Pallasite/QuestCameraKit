@@ -30,6 +30,13 @@ public class AprilTagWireframeVisualizer : MonoBehaviour
         DuringStreamingOnly,
         /// <summary>Never draw — useful to disable visuals without removing the component.</summary>
         Never,
+        /// <summary>
+        /// Gate on the single/double-tag placement flow: draw while the obstacle is
+        /// NOT yet placed (Setup), hide once placed so wireframe cubes don't
+        /// distract the participant during walks. Appended member — do not reorder
+        /// (serialized by index in scenes).
+        /// </summary>
+        DuringPlacementSetup,
     }
 
     [Tooltip("Material for the wireframe lines. Use an unlit color material " +
@@ -56,6 +63,16 @@ public class AprilTagWireframeVisualizer : MonoBehaviour
     [Tooltip("When to draw wireframes. Default 'DuringCalibrationOnly' shows them while uncalibrated " +
              "and during streaming sweeps, then hides them in steady-state when the obstacle is anchored.")]
     [SerializeField] private DisplayMode displayMode = DisplayMode.DuringCalibrationOnly;
+
+    [Tooltip("Used by the 'DuringPlacementSetup' mode: draw while this placement controller has no " +
+             "placed obstacle, hide once placed. Auto-resolved (scene-wide) if left null.")]
+    [SerializeField] private ObstaclePlacementController placement;
+
+    /// <summary>
+    /// Diagnostic override (not serialized): when true, wireframes draw regardless
+    /// of <see cref="displayMode"/>. Driven by the SessionHUD diagnostics toggle.
+    /// </summary>
+    public bool ForceVisible { get; set; }
 
     [Header("Quality color")]
     [Tooltip("Vary wireframe color per tag based on detection quality (observation count during " +
@@ -95,6 +112,7 @@ public class AprilTagWireframeVisualizer : MonoBehaviour
         // visibility modes + size source work zero-touch.
         if (!corrector) corrector = GetComponent<ConstellationDriftCorrector>();
         if (!sizeSource) sizeSource = GetComponent<StereoAprilTagScanner>();
+        if (!placement) placement = FindAnyObjectByType<ObstaclePlacementController>();
     }
 
     private void OnEnable()
@@ -171,10 +189,17 @@ public class AprilTagWireframeVisualizer : MonoBehaviour
 
     private bool ShouldDrawThisFrame()
     {
+        if (ForceVisible) return true;   // diagnostics override
+
         switch (displayMode)
         {
             case DisplayMode.Never:
                 return false;
+            case DisplayMode.DuringPlacementSetup:
+                // No placement controller found -> fall back to always-on so the
+                // wireframe never silently disappears in a misconfigured scene.
+                if (placement == null) return true;
+                return !placement.IsPlaced;
             case DisplayMode.Always:
                 return true;
             case DisplayMode.DuringStreamingOnly:
@@ -203,41 +228,13 @@ public class AprilTagWireframeVisualizer : MonoBehaviour
         return residualQualityGradient.Evaluate(tRes);
     }
 
-    // Default red -> yellow -> green ramp for "few -> many observations".
-    private static Gradient DefaultStreamingGradient()
-    {
-        var g = new Gradient();
-        g.SetKeys(
-            new[]
-            {
-                new GradientColorKey(new Color(1.0f, 0.2f, 0.2f), 0f),
-                new GradientColorKey(new Color(1.0f, 0.9f, 0.2f), 0.5f),
-                new GradientColorKey(new Color(0.2f, 1.0f, 0.3f), 1f),
-            },
-            new[]
-            {
-                new GradientAlphaKey(1f, 0f),
-                new GradientAlphaKey(1f, 1f),
-            });
-        return g;
-    }
+    // Palette ramp for "few -> many observations" (bad -> good). See
+    // ExperimentPalette — the red<->green defaults collided in opposite
+    // directions across the two gradients and were not colorblind-safe.
+    // NOTE: serialized scene values override these defaults; existing scenes
+    // are unaffected until their gradients are edited.
+    private static Gradient DefaultStreamingGradient() => ExperimentPalette.BadToGood();
 
-    // Default green -> yellow -> red ramp for "small residual -> large residual".
-    private static Gradient DefaultResidualGradient()
-    {
-        var g = new Gradient();
-        g.SetKeys(
-            new[]
-            {
-                new GradientColorKey(new Color(0.2f, 1.0f, 0.3f), 0f),
-                new GradientColorKey(new Color(1.0f, 0.9f, 0.2f), 0.5f),
-                new GradientColorKey(new Color(1.0f, 0.2f, 0.2f), 1f),
-            },
-            new[]
-            {
-                new GradientAlphaKey(1f, 0f),
-                new GradientAlphaKey(1f, 1f),
-            });
-        return g;
-    }
+    // Palette ramp for "small residual -> large residual" (good -> bad).
+    private static Gradient DefaultResidualGradient() => ExperimentPalette.GoodToBad();
 }
