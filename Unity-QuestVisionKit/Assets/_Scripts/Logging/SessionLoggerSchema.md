@@ -138,13 +138,32 @@ bounded-error question.
 
 Correction application:
 
-- `session_event subtype=obstacle_placed` — once, on first placement. `detail`:
-  `solver=...;variant=Anchored|WorldRoot;policy=Deferred|SmoothedLive|RawLive;pos=x|y|z`.
+- `session_event subtype=obstacle_placed` — once per placement. `detail`:
+  `solver=...;preset=<name|custom>;variant=Anchored|WorldRoot;policy=Deferred|SmoothedLive|RawLive;pos=x|y|z`.
 - `correction_event` (`mode=applied`, `accepted=1`) — in the Deferred policy, one
   per held correction applied **between trials** (on obstacle reset, after the
   participant passes). `delta_position_m` / `delta_rotation_deg` /
   `correction_applied_m` carry the magnitude moved. In SmoothedLive / RawLive the
   obstacle is moved live and no per-trial `correction_event` is emitted.
+- `correction_event` (`accepted=0`, `rejection_reason=stale_proposal`) — a held
+  Deferred correction older than ~5 s (tag occluded since measurement) is
+  rejected instead of applied.
+
+Session-flow events (UX pass, all additive — still schema v1):
+
+| `session_event` subtype | When | `detail` |
+|---|---|---|
+| `phase_change` | every session-phase transition | `from=..;to=..;reason=..` (phases: Setup/Ready/Running/Paused/Complete; `reason=sequence_complete_ignored` marks a boot-time sequence-complete from a 1-based trial CSV) |
+| `config_change` | every condition change (preset cycle or individual setter) | `preset=<name|custom>;solver=..;policy=..;variant=..;placed=0|1;reason=boot\|preset:<name>\|set_policy\|set_solver\|set_variant` |
+| `trial_redo` | experimenter redid a fouled walk | `index=..;phase=Running\|Paused` |
+| `application_pause` / `application_resume` | headset doffed/donned (OS pause) | (empty) — pause also forces a writer flush |
+
+Walk-row semantics under redo: a redone trial produces a **repeated
+`walk_phase=start` row for the same `walk_index` with no intervening `end`** —
+that is the redo signature. `end` rows are only emitted for completed walks.
+
+`session_start.detail` gains `participant_source=file|inspector` (whether
+`participant.txt` on the device overrode the Inspector participant ID).
 
 ## Session header
 
@@ -192,3 +211,11 @@ On the Quest, sessions land in `Application.persistentDataPath` which maps to
   `state_snapshot` convention documented above. No columns changed — files stay
   `schema_version=1` and older readers remain compatible. See
   `SingleTagObstacleHandoff.md` for the scene-specific analysis guide.
+- **v1 (additive, no bump — UX pass 2026-07)** — session-flow events
+  (`phase_change`, `config_change`, `trial_redo`, `application_pause/resume`),
+  `stale_proposal` correction rejections, `participant_source` in the session
+  header, `preset=` in `obstacle_placed`/`config_change`, and the
+  repeated-start redo signature for walk rows. Also fixes a latent race where
+  walk `end` rows could carry the next trial's index and ~0 duration —
+  end-row data before this pass should be treated with suspicion if the same
+  `timestamp_session` shows `start(N+1)` before `end(N)`.

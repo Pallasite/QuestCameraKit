@@ -10,6 +10,50 @@ over a 45-90 min session (not a hard <1 cm guarantee).
 
 ---
 
+## UPDATE 2026-07-06 — UX pass complete (autonomous run)
+
+The experimenter-experience pass shipped on top of everything below. Headlines:
+
+- **`SessionFlowController`** (`Assets/_Scripts/Experiment/`) — phase machine
+  Setup→Ready→Running→Paused→Complete; owns trial-loop arming exclusively
+  (**`TrialLoopActivator` is [Obsolete] and removed from both scenes** — its
+  arm-on-placement behavior was a hazard). Explicit Start-trials hold; redo is
+  pause-safe and clearance-guarded; sequence-complete gated to Running/Paused
+  (1-based trial CSVs can no longer brick boot).
+- **`ExperimenterSessionControls` rewritten** — phase-gated **hold-to-confirm**
+  (0.9 s, chord grouping, escalating haptics, HUD progress). Bindings in
+  `Docs/OperatorQuickstart.md` (written for the grad-student operator).
+- **`SessionHUD`** (multi-zone, in the reworked
+  `PipelineStatusHUD (SingleTag).prefab`, both scenes) — status bar / per-phase
+  guidance with live capture progress / transients / toggleable diagnostics;
+  lazy-follow; hides during Running (participant wears the headset). Replaces
+  the old HUD that showed dead constellation instructions.
+- **Ghost preview** — translucent palette-cyan obstacle at the tag-proposed
+  pose during the place-hold (`Assets/Materials/GhostPreview.mat`).
+- **Palette** — `ExperimentPalette`: cyan=good / magenta=bad everywhere
+  (HUD, wireframe gradients). Wireframe now hides during walks
+  (`DuringPlacementSetup` mode) unless diagnostics are on.
+- **Logging** — new session-flow events + fixes, see `SessionLoggerSchema.md`
+  changelog (still schema v1, additive): `phase_change`, `config_change`
+  (A/B attribution), `trial_redo`, `application_pause/resume` (with forced
+  flush — the missing-session_end fix), `participant_source`,
+  `stale_proposal` rejections. **Fixed a latent walk-end row race** that could
+  stamp end rows with the next trial's index and ~0 duration.
+- **Presets** — `ObstaclePlacementController.presets` ships `[A:
+  Single/Deferred/Anchored]`; add more in the Inspector for A/B sessions.
+- **participant.txt** — adb-push next to trial_conditions.csv to set the
+  participant ID per session (falls back to the Inspector value).
+
+**Editor-verified end-to-end in playmode** (synthetic tag injection + rig-root
+walking): placement → Ready → StartTrials → trigger → perturb → auto-reset →
+deferred correction (exact magnitude) → advance; pause/redo stay disarmed; CSV
+row ordering asserted. **Still needs the device pass**: hold ergonomics +
+haptic feel, real-tag placement + ghost quality, Scratch passthrough, anchor
+behavior under real SLAM, HUD legibility/lazy-follow comfort. Known-benign:
+`PassthroughCameraAccess` NREs in editor playmode (no camera hardware).
+
+---
+
 ## Where things stand
 
 **Branch `SingleTagObstacle`** (off `ControllerCorrections`) — a deliberate
