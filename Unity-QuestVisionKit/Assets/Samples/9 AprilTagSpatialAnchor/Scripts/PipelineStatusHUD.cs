@@ -12,7 +12,7 @@ using UnityEngine;
 /// (e.g. on a world-space Canvas near the user's hand) and wire the
 /// references in the Inspector.
 /// </summary>
-public class PipelineStatusHUD : MonoBehaviour
+public class PipelineStatusHUD : MonoBehaviour, IHudTransientSink
 {
     [Header("Wiring")]
     [SerializeField] private ConstellationDriftCorrector corrector;

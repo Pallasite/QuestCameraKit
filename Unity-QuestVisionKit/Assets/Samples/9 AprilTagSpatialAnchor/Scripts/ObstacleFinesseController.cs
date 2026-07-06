@@ -116,7 +116,7 @@ public class ObstacleFinesseController : MonoBehaviour
     private float TranslationStep => FineMode ? fineTranslationMeters : coarseTranslationMeters;
     private float RotationStep => FineMode ? fineRotationDegrees : coarseRotationDegrees;
 
-    private PipelineStatusHUD _hud;
+    private IHudTransientSink _hud;
 
     private void Awake()
     {
@@ -135,7 +135,7 @@ public class ObstacleFinesseController : MonoBehaviour
         // Debug.Log still give feedback if it's missing).
         if (!placer) placer = FindAnyObjectByType<ControllerObstaclePlacer>();
         if (!driftCorrector) driftCorrector = FindAnyObjectByType<ControllerDriftCorrector>();
-        if (!_hud) _hud = FindAnyObjectByType<PipelineStatusHUD>();
+        if (_hud == null) _hud = HudSink.Find();
     }
 
     private void OnEnable()
@@ -218,21 +218,28 @@ public class ObstacleFinesseController : MonoBehaviour
             return;
         }
 
-        // 2. Calibration chords — must work before an obstacle exists.
-        if (rightGrip && aPressed)
+        // 2. Calibration chords — must work before an obstacle exists. Only
+        //    claimed when a ConstellationDriftCorrector is actually present
+        //    (old constellation scenes). In the single/double-tag scenes there
+        //    is no corrector, so R-grip+A/B stay free for other control
+        //    surfaces instead of being eaten by a warning no-op.
+        if (corrector != null)
         {
-            TriggerCalibrate();
-            return;
-        }
-        if (rightGrip && bPressed)
-        {
-            TriggerStreamingToggle();
-            return;
-        }
-        if (rightGrip && input.WasPressedThisFrame(OVRInput.Button.SecondaryThumbstick))
-        {
-            TriggerStreamingCancel();
-            return;
+            if (rightGrip && aPressed)
+            {
+                TriggerCalibrate();
+                return;
+            }
+            if (rightGrip && bPressed)
+            {
+                TriggerStreamingToggle();
+                return;
+            }
+            if (rightGrip && input.WasPressedThisFrame(OVRInput.Button.SecondaryThumbstick))
+            {
+                TriggerStreamingCancel();
+                return;
+            }
         }
 
         // 3. Per-axis resets (no grip modifier).
@@ -363,7 +370,7 @@ public class ObstacleFinesseController : MonoBehaviour
             Pulse(OVRInput.Controller.RTouch);
         }
 
-        if (_hud == null) _hud = FindAnyObjectByType<PipelineStatusHUD>();
+        if (_hud == null) _hud = HudSink.Find();
         if (_hud != null)
         {
             _hud.ShowTransient($"<color=#FFFF88>Finesse target: {activeTarget.ToString().ToUpperInvariant()}</color>", 4f);
