@@ -618,7 +618,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 1430746637443730564, guid: 15794fbcd7a75b04d9d4ee98c74d08eb, type: 3}
       propertyPath: m_Name
-      value: Pipeline Status HUD
+      value: Session HUD
       objectReference: {fileID: 0}
     - target: {fileID: 4619987176724338985, guid: 15794fbcd7a75b04d9d4ee98c74d08eb, type: 3}
       propertyPath: obstacleController
@@ -711,15 +711,15 @@ PrefabInstance:
   m_SourcePrefab: {fileID: 100100000, guid: 15794fbcd7a75b04d9d4ee98c74d08eb, type: 3}
 --- !u!114 &1069611704 stripped
 MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 5241909026532851245, guid: 15794fbcd7a75b04d9d4ee98c74d08eb, type: 3}
+  m_CorrespondingSourceObject: {fileID: 3962277235402498526, guid: 15794fbcd7a75b04d9d4ee98c74d08eb, type: 3}
   m_PrefabInstance: {fileID: 1069611703}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e586da6189443d1408cc82a403f1d7e7, type: 3}
+  m_Script: {fileID: 11500000, guid: 7b9745adf128a2b4582c212158eb9656, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::PipelineStatusHUD
+  m_EditorClassIdentifier: Assembly-CSharp::SessionHUD
 --- !u!1 &1146725258
 GameObject:
   m_ObjectHideFlags: 0
@@ -730,8 +730,8 @@ GameObject:
   m_Component:
   - component: {fileID: 1146725262}
   - component: {fileID: 1146725261}
-  - component: {fileID: 1146725260}
   - component: {fileID: 1146725259}
+  - component: {fileID: 1146725263}
   m_Layer: 0
   m_Name: Obstacle Placement System
   m_TagString: Untagged
@@ -752,32 +752,17 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ExperimenterSessionControls
   input: {fileID: 112548701}
+  flow: {fileID: 1146725263}
   placement: {fileID: 1146725261}
-  trialSequencer: {fileID: 112548699}
-  trialLoop: {fileID: 1146725260}
   hud: {fileID: 1069611704}
   modifier: 4194304
-  placeButton: 8192
-  redoButton: 2097152
-  cyclePolicyButton: 256
+  leftIndex: 8192
+  rightIndex: 2097152
+  menuButton: 256
+  diagnosticsButton: 8388608
+  holdSeconds: 0.9
+  chordGroupingSeconds: 0.15
   haptics: 1
---- !u!114 &1146725260
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1146725258}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 8962a950a3f9fbf438178ac399da9298, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TrialLoopActivator
-  obstacleController: {fileID: 112548698}
-  trialSequencer: {fileID: 112548699}
-  placement: {fileID: 1146725261}
-  autoReset: 1
-  advanceTrials: 1
 --- !u!114 &1146725261
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -794,7 +779,11 @@ MonoBehaviour:
   obstaclePrefab: {fileID: 5770893990329113263, guid: c1066bdbdc55a0c45a75cc6691eb62af, type: 3}
   obstacleController: {fileID: 112548698}
   finesseController: {fileID: 112548702}
-  hud: {fileID: 1069611704}
+  presets:
+  - name: A
+    solver: 0
+    policy: 0
+    variant: 0
   trackingVariant: 0
   visualPolicy: 0
   solverMode: 0
@@ -810,6 +799,8 @@ MonoBehaviour:
   gateMaxRotationSpreadDegrees: 2
   gateMaxObservationAgeSeconds: 0.5
   smoothingRatePerSecond: 4
+  pendingProposalMaxAgeSeconds: 5
+  ghostMaterial: {fileID: 2100000, guid: 8d53fdc58ba0a8d44b0d3c7a48c156e6, type: 2}
   hideUntilPlaced: 1
   logMeasurements: 1
   measurementLogRateHz: 30
@@ -828,6 +819,23 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1146725263
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1146725258}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6744a0e21a8d3d3438ca13d29ab83793, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SessionFlowController
+  placement: {fileID: 1146725261}
+  trialSequencer: {fileID: 112548699}
+  obstacleController: {fileID: 112548698}
+  trialLoader: {fileID: 112548700}
+  redoClearanceMarginMeters: 0.5
 --- !u!1001 &1152822077
 PrefabInstance:
   m_ObjectHideFlags: 0

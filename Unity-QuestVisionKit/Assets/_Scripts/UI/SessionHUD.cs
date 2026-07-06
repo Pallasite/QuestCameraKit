@@ -125,10 +125,13 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
         var phase = _flow != null ? _flow.Phase : SessionPhase.Setup;
 
         // Audience rule: hide mid-walk (participant wears the headset).
+        // Disable the Canvas COMPONENT, not its GameObject — the canvas lives on
+        // this same GameObject, and SetActive(false) would kill our own Update
+        // loop and never come back.
         bool hidden = hideWhileRunning && phase == SessionPhase.Running && !DiagnosticsVisible
                       && (_flow == null || !_flow.WaitingForRedoClearance);
-        if (_canvas != null && _canvas.gameObject.activeSelf == hidden)
-            _canvas.gameObject.SetActive(!hidden);
+        if (_canvas != null && _canvas.enabled == hidden)
+            _canvas.enabled = !hidden;
         if (hidden) return;
 
         if (statusText != null) statusText.text = BuildStatus(phase);
