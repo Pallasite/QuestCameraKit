@@ -16,18 +16,20 @@ using UnityEngine;
 /// The active <see cref="ITagPlacementSolver"/> turns per-frame AprilTag
 /// detections into a proposed base pose. How that proposal reaches the visible
 /// obstacle is governed by <see cref="VisualUpdatePolicy"/> (Deferred default =
-/// apply between trials; SmoothedLive = low-pass live; RawLive = snap live).
+/// apply between trials on obstacle reset; SmoothedLive = low-pass live;
+/// RawLive = snap live).
 ///
 /// Placement is <see cref="PlacementTrigger.Manual"/> by default: the experimenter
-/// frames the tag and calls <see cref="CapturePlacement"/> ("place now") for the
-/// highest-quality stable capture. Variant / policy / solver have runtime setters +
-/// cycles so an in-headset control surface (or a future web bridge) can A/B them —
-/// see <see cref="ExperimenterSessionControls"/>.
+/// frames the tag and commits via <see cref="CapturePlacement"/> ("place now").
+/// During the place-hold a translucent <b>ghost preview</b> can be shown at the
+/// live tag-proposed pose (<see cref="BeginPlacementPreview"/>).
 ///
-/// Logging reuses the existing SessionLogger schema (no column changes): state_snapshot
-/// rows with mode=observe carry the tag-proposed pose, mode=applied carry the obstacle
-/// base's actual world pose; correction_event rows record each applied between-trial
-/// correction. correction_source = the solver's label (apriltag_single / apriltag_pair).
+/// Experimental conditions are bundled as <see cref="ConditionPreset"/>s cycled
+/// via <see cref="CyclePreset"/>; every config change (preset or individual
+/// setter) is logged as <c>session_event subtype=config_change</c> so A/B
+/// comparisons are attributable in the CSV. Deferred corrections older than
+/// <see cref="pendingProposalMaxAgeSeconds"/> are rejected (stale after tag
+/// occlusion) and logged as rejected correction_events.
 /// </summary>
 [DisallowMultipleComponent]
 public sealed class ObstaclePlacementController : MonoBehaviour
@@ -48,10 +50,12 @@ public sealed class ObstaclePlacementController : MonoBehaviour
              "runtime so the baked-in nudge layer sits between the tag offset and the obstacle.")]
     [SerializeField] private ObstacleFinesseController finesseController;
 
-    [Tooltip("Optional HUD for transient placement/status messages. Auto-resolved if empty.")]
-    [SerializeField] private PipelineStatusHUD hud;
+    [Header("Condition presets")]
+    [Tooltip("Named {solver, policy, variant} bundles cycled as one action. First entry = boot " +
+             "default. Add more in the Inspector for A/B sessions (see OperatorQuickstart.md).")]
+    [SerializeField] private ConditionPreset[] presets = Array.Empty<ConditionPreset>();
 
-    [Header("Variant (Inspector-switchable; also runtime via setters)")]
+    [Header("Variant (set by presets; individually settable via the public API)")]
     [SerializeField] private TrackingVariant trackingVariant = TrackingVariant.Anchored;
     [SerializeField] private VisualUpdatePolicy visualPolicy = VisualUpdatePolicy.Deferred;
     [SerializeField] private TagSolverMode solverMode = TagSolverMode.SingleTag;
@@ -82,6 +86,15 @@ public sealed class ObstaclePlacementController : MonoBehaviour
     [Tooltip("Fraction-per-second the obstacle closes toward the tag pose. Higher = snappier.")]
     [SerializeField, Range(0.1f, 20f)] private float smoothingRatePerSecond = 4f;
 
+    [Header("Deferred corrections")]
+    [Tooltip("A held (Deferred) correction older than this is rejected as stale instead of " +
+             "applied — protects against a minutes-old proposal surviving tag occlusion.")]
+    [SerializeField] private float pendingProposalMaxAgeSeconds = 5f;
+
+    [Header("Ghost preview")]
+    [Tooltip("Translucent material for the placement ghost (URP Unlit transparent, palette cyan).")]
+    [SerializeField] private Material ghostMaterial;
+
     [Header("Behavior")]
     [Tooltip("Hide the obstacle's renderers until the first stable placement.")]
     [SerializeField] private bool hideUntilPlaced = true;
@@ -106,12 +119,23 @@ public sealed class ObstaclePlacementController : MonoBehaviour
     private bool _captureRequested;
     private bool _hasPending;
     private Pose _pendingProposed;
+    private float _pendingSetTime;
     private Pose _latestProposed;
     private bool _hasLatest;
+    private float _latestSetTime;
+    private float _lastTagSeenTime = float.NegativeInfinity;
     private float _nextMeasurementLogTime;
     private Transform _cameraRef;
+    private int _presetIndex;
 
-    // ---- public surface (chords + future web bridge call these) ----
+    private IHudTransientSink _hud;
+    private bool _hudSearched;
+
+    private GameObject _ghost;
+    private bool _previewActive;
+    private float _lastCorrectionMm = -1f;
+
+    // ---- public surface (chords + HUD + future web console) ----
     public bool IsPlaced => _placed;
     public bool HasTagCandidate => _hasLatest;
     public Transform ObstacleTransform => _obstacle;
@@ -120,9 +144,47 @@ public sealed class ObstaclePlacementController : MonoBehaviour
     public TagSolverMode Solver => solverMode;
     public string SourceLabel => _solver != null ? _solver.SourceLabel : "(none)";
 
+    /// <summary>Name of the active preset, or "custom" after an individual setter diverged.</summary>
+    public string CurrentPresetName { get; private set; } = "custom";
+
+    /// <summary>True between CapturePlacement() and the stable capture landing.</summary>
+    public bool IsCaptureRequested => _captureRequested;
+
+    // Capture-progress surface for the HUD guidance zone.
+    public int CaptureSampleCount => _gate?.SampleCount ?? 0;
+    public int CaptureWindowSize => gateWindowSize;
+    public float CapturePositionSpreadMeters => _gate?.LastPositionSpread ?? 0f;
+    public float CaptureRotationSpreadDegrees => _gate?.LastRotationSpread ?? 0f;
+
+    /// <summary>Seconds since any tag was last detected (infinity if never).</summary>
+    public float SecondsSinceLastTag => Time.time - _lastTagSeenTime;
+
+    /// <summary>Magnitude of the last applied Deferred correction (mm); -1 if none yet.</summary>
+    public float LastCorrectionMm => _lastCorrectionMm;
+
+    /// <summary>Anchor state for the diagnostics zone: none / creating / created / localized.</summary>
+    public string AnchorStatus
+    {
+        get
+        {
+            if (trackingVariant != TrackingVariant.Anchored) return "world-root";
+            if (_anchor == null) return _placed ? "MISSING" : "none";
+            if (_anchor.Localized) return "localized";
+            if (_anchor.Created) return "created";
+            return "creating";
+        }
+    }
+
+    /// <summary>Latest stable solver proposal, if one exists.</summary>
+    public bool TryGetLatestProposal(out Pose pose)
+    {
+        pose = _latestProposed;
+        return _hasLatest;
+    }
+
     /// <summary>Fired after the obstacle is (re)placed.</summary>
     public event Action OnPlaced;
-    /// <summary>Fired when variant / policy / solver changes (for HUD / web sync).</summary>
+    /// <summary>Fired when variant / policy / solver / preset changes (for HUD / web sync).</summary>
     public event Action OnConfigChanged;
 
     private void Awake()
@@ -130,7 +192,6 @@ public sealed class ObstaclePlacementController : MonoBehaviour
         if (!displayManager) displayManager = FindAnyObjectByType<AprilTagDisplayManager>();
         if (!obstacleController) obstacleController = FindAnyObjectByType<ObstacleController>();
         if (!finesseController) finesseController = FindAnyObjectByType<ObstacleFinesseController>();
-        if (!hud) hud = FindAnyObjectByType<PipelineStatusHUD>();
     }
 
     private void Start()
@@ -142,12 +203,22 @@ public sealed class ObstaclePlacementController : MonoBehaviour
             return;
         }
 
+        // Boot into the first preset when one exists (keeps scene serialized
+        // values as fallback when the list is empty).
+        if (presets != null && presets.Length > 0)
+        {
+            _presetIndex = 0;
+            ApplyPresetInternal(presets[0], logChange: false);
+        }
+
         BuildChain();
         BuildSolver();
 
         if (obstacleController) obstacleController.SetManualTarget(_obstacle);
         if (finesseController) finesseController.SetManualTarget(_finesseOffset);
         if (obstacleController) obstacleController.OnObstacleReset += ApplyPendingCorrection;
+
+        LogConfigChange("boot");
     }
 
     private void OnEnable()
@@ -163,6 +234,7 @@ public sealed class ObstaclePlacementController : MonoBehaviour
     private void OnDestroy()
     {
         if (obstacleController) obstacleController.OnObstacleReset -= ApplyPendingCorrection;
+        if (_ghost != null) Destroy(_ghost);
     }
 
     private void BuildChain()
@@ -209,11 +281,16 @@ public sealed class ObstaclePlacementController : MonoBehaviour
 
     private void HandleDetections(AprilTagDisplayManager.TagWorldPose[] detections)
     {
+        // Stamp visibility on ANY detection batch, before the solver filters by
+        // ID/stability — the HUD's "tag last seen" reads this.
+        if (detections != null && detections.Length > 0) _lastTagSeenTime = Time.time;
+
         if (_solver == null) return;
         if (!_solver.TryGetPose(detections, Time.time, out var proposed)) return;
 
         _latestProposed = proposed;
         _hasLatest = true;
+        _latestSetTime = Time.time;
 
         if (!_placed)
         {
@@ -236,6 +313,7 @@ public sealed class ObstaclePlacementController : MonoBehaviour
             case VisualUpdatePolicy.Deferred:
                 _pendingProposed = proposed;
                 _hasPending = true;
+                _pendingSetTime = Time.time;
                 break;
         }
 
@@ -250,6 +328,12 @@ public sealed class ObstaclePlacementController : MonoBehaviour
             var pos = Vector3.Lerp(_tagOffset.position, _latestProposed.position, t);
             var rot = Quaternion.Slerp(_tagOffset.rotation, _latestProposed.rotation, t);
             _tagOffset.SetPositionAndRotation(pos, rot);
+        }
+
+        if (_previewActive && _ghost != null && _hasLatest)
+        {
+            _ghost.transform.SetPositionAndRotation(_latestProposed.position, _latestProposed.rotation);
+            if (!_ghost.activeSelf) _ghost.SetActive(true);
         }
     }
 
@@ -285,10 +369,93 @@ public sealed class ObstaclePlacementController : MonoBehaviour
         _solver?.Reset();
         if (_anchor) { Destroy(_anchor); _anchor = null; }
         if (hideUntilPlaced) SetObstacleVisible(false);
+        EndPlacementPreview();
         Hud(autoReplace ? "Re-placing with new config…" : "Cleared — Place now to re-capture.");
     }
 
+    // ---- ghost preview (public: controls call Begin on hold-start, End on cancel) ----
+
+    /// <summary>Show the translucent ghost at the live tag-proposed pose.</summary>
+    public void BeginPlacementPreview()
+    {
+        if (_placed) return;
+        _previewActive = true;
+        if (_ghost == null) _ghost = BuildGhost();
+        // Shown by Update() once a stable proposal exists (avoids a ghost at origin).
+        if (_ghost != null && !_hasLatest) _ghost.SetActive(false);
+    }
+
+    /// <summary>Hide the ghost (hold cancelled or placement committed).</summary>
+    public void EndPlacementPreview()
+    {
+        _previewActive = false;
+        if (_ghost != null) _ghost.SetActive(false);
+    }
+
+    private GameObject BuildGhost()
+    {
+        if (obstaclePrefab == null) return null;
+        var ghost = Instantiate(obstaclePrefab);
+        ghost.name = "Obstacle Ghost (preview)";
+
+        // Strip everything that behaves: OcclusionSwapper reassigns materials at
+        // runtime (would stomp the ghost material), colliders would collide.
+        foreach (var mb in ghost.GetComponentsInChildren<MonoBehaviour>(true)) Destroy(mb);
+        foreach (var col in ghost.GetComponentsInChildren<Collider>(true)) Destroy(col);
+
+        if (ghostMaterial != null)
+        {
+            foreach (var r in ghost.GetComponentsInChildren<Renderer>(true))
+            {
+                var mats = r.sharedMaterials;
+                for (int i = 0; i < mats.Length; i++) mats[i] = ghostMaterial;
+                r.sharedMaterials = mats;
+            }
+        }
+
+        ghost.SetActive(false);
+        return ghost;
+    }
+
     // ---- runtime config (public for chords / web) ----
+
+    /// <summary>Advance to the next preset in the list (wraps). Re-places if already placed.</summary>
+    public void CyclePreset()
+    {
+        if (presets == null || presets.Length == 0)
+        {
+            Hud("No presets configured (Inspector list is empty)");
+            return;
+        }
+        _presetIndex = (_presetIndex + 1) % presets.Length;
+        ApplyPreset(presets[_presetIndex]);
+    }
+
+    /// <summary>Apply a named condition bundle as one action.</summary>
+    public void ApplyPreset(ConditionPreset preset) => ApplyPresetInternal(preset, logChange: true);
+
+    private void ApplyPresetInternal(ConditionPreset preset, bool logChange)
+    {
+        CurrentPresetName = string.IsNullOrEmpty(preset.name) ? "unnamed" : preset.name;
+
+        bool solverChanged = preset.solver != solverMode;
+        bool variantChanged = preset.variant != trackingVariant;
+
+        visualPolicy = preset.policy;
+        trackingVariant = preset.variant;
+        solverMode = preset.solver;
+        if (visualPolicy == VisualUpdatePolicy.Deferred) _hasPending = false;
+        if (solverChanged && _gate != null) BuildSolver();
+
+        OnConfigChanged?.Invoke();
+        if (logChange)
+        {
+            LogConfigChange($"preset:{CurrentPresetName}");
+            Hud($"Preset: <b>{CurrentPresetName}</b> · {solverMode} · {visualPolicy} · {trackingVariant}");
+        }
+
+        if (_placed && (solverChanged || variantChanged)) RecaptureAndReplace();
+    }
 
     public void CycleVisualPolicy()
     {
@@ -303,9 +470,12 @@ public sealed class ObstaclePlacementController : MonoBehaviour
 
     public void SetVisualPolicy(VisualUpdatePolicy p)
     {
+        if (p == visualPolicy) return;
         visualPolicy = p;
+        CurrentPresetName = "custom";
         if (p == VisualUpdatePolicy.Deferred) _hasPending = false;
         OnConfigChanged?.Invoke();
+        LogConfigChange("set_policy");
         Hud($"Policy: {p}");
     }
 
@@ -316,7 +486,9 @@ public sealed class ObstaclePlacementController : MonoBehaviour
     {
         if (v == trackingVariant) return;
         trackingVariant = v;
+        CurrentPresetName = "custom";
         OnConfigChanged?.Invoke();
+        LogConfigChange("set_variant");
         Hud($"Variant: {v}");
         if (_placed) RecaptureAndReplace();
     }
@@ -329,8 +501,10 @@ public sealed class ObstaclePlacementController : MonoBehaviour
     {
         if (m == solverMode) return;
         solverMode = m;
+        CurrentPresetName = "custom";
         BuildSolver();
         OnConfigChanged?.Invoke();
+        LogConfigChange("set_solver");
         Hud($"Solver: {m}");
         if (_placed) RecaptureAndReplace();
     }
@@ -351,6 +525,7 @@ public sealed class ObstaclePlacementController : MonoBehaviour
         _tagOffset.SetPositionAndRotation(pose.position, pose.rotation);
         _placed = true;
         if (hideUntilPlaced) SetObstacleVisible(true);
+        EndPlacementPreview();
 
         Debug.Log($"[ObstaclePlacement] Placed ({solverMode}, {trackingVariant}, {visualPolicy}) at {pose.position}.");
         Hud($"Placed · {solverMode} · {trackingVariant}");
@@ -360,7 +535,7 @@ public sealed class ObstaclePlacementController : MonoBehaviour
         {
             SessionLogger.Instance.Enqueue(LogEvent.SessionEvent(
                 "obstacle_placed",
-                $"solver={_solver.SourceLabel};variant={trackingVariant};policy={visualPolicy};pos={Fmt(pose.position)}"));
+                $"solver={_solver.SourceLabel};preset={CurrentPresetName};variant={trackingVariant};policy={visualPolicy};pos={Fmt(pose.position)}"));
         }
 
         OnPlaced?.Invoke();
@@ -371,6 +546,22 @@ public sealed class ObstaclePlacementController : MonoBehaviour
     {
         if (!_placed || visualPolicy != VisualUpdatePolicy.Deferred || !_hasPending) return;
 
+        float age = Time.time - _pendingSetTime;
+        if (age > pendingProposalMaxAgeSeconds)
+        {
+            // Tag hasn't been seen recently — the held proposal is stale
+            // (headset drift since it was measured makes it wrong to apply).
+            _hasPending = false;
+            Debug.Log($"[ObstaclePlacement] Deferred correction skipped: proposal {age:F1}s old (> {pendingProposalMaxAgeSeconds:F0}s).");
+            if (SessionLogger.Instance != null)
+            {
+                SessionLogger.Instance.Enqueue(LogEvent.CorrectionEvent(
+                    _solver.SourceLabel, mode: "applied", accepted: false,
+                    rejectionReason: "stale_proposal"));
+            }
+            return;
+        }
+
         var beforePos = _tagOffset.position;
         var beforeRot = _tagOffset.rotation;
         _tagOffset.SetPositionAndRotation(_pendingProposed.position, _pendingProposed.rotation);
@@ -378,6 +569,7 @@ public sealed class ObstaclePlacementController : MonoBehaviour
 
         float dPos = Vector3.Distance(beforePos, _pendingProposed.position);
         float dRot = Quaternion.Angle(beforeRot, _pendingProposed.rotation);
+        _lastCorrectionMm = dPos * 1000f;
         Debug.Log($"[ObstaclePlacement] Deferred correction applied between trials: {dPos * 1000f:F1} mm / {dRot:F2} deg.");
 
         if (SessionLogger.Instance != null)
@@ -386,6 +578,14 @@ public sealed class ObstaclePlacementController : MonoBehaviour
                 _solver.SourceLabel, mode: "applied", accepted: true,
                 deltaPositionM: dPos, deltaRotationDeg: dRot, correctionAppliedM: dPos));
         }
+    }
+
+    private void LogConfigChange(string reason)
+    {
+        if (SessionLogger.Instance == null) return;
+        SessionLogger.Instance.Enqueue(LogEvent.SessionEvent(
+            "config_change",
+            $"preset={CurrentPresetName};solver={solverMode};policy={visualPolicy};variant={trackingVariant};placed={(_placed ? 1 : 0)};reason={reason}"));
     }
 
     private void LogMeasurement(Pose proposed)
@@ -428,7 +628,8 @@ public sealed class ObstaclePlacementController : MonoBehaviour
 
     private void Hud(string msg)
     {
-        if (hud) hud.ShowTransient(msg, 3f);
+        if (!_hudSearched) { _hud = HudSink.Find(); _hudSearched = true; }
+        _hud?.ShowTransient(msg, 3f);
     }
 
     private static string Fmt(Vector3 v)
