@@ -10,6 +10,62 @@ over a 45-90 min session (not a hard <1 cm guarantee).
 
 ---
 
+## UPDATE 2026-07-14 — Field-test fix pass (user feedback, 10 items)
+
+First real field test (grad-student experimenter) surfaced 10 issues; all
+diagnosed and fixed this pass. Full diagnosis + decisions live in the commits;
+headlines:
+
+- **Perturbation axis (the big one):** obstacle perturbed vertically — up
+  toward the eyes or DOWN through the floor, where env-depth occlusion
+  swallowed it whole (that was the "obstacle disappears when stepping over").
+  Cause: perturb axis = local +Z inheriting the raw tag rotation + a
+  world-Z-vs-local-forward sign bug. Fixed: `SingleTagSolver` yaw-flattens
+  (convention: **tag flat on floor, printed top = walking direction**; wall
+  tag = face normal), `DefaultObstacleBehavior.Move` projects horizontal and
+  signs toward/away on the same axis.
+- **Two-color obstacle:** commit b4410c2 had repointed `No Occlusion Lit
+  Green.mat` at the occluding shadergraph (different `_Base_Color`) — so the
+  1 m OcclusionSwapper flip changed color AND occlusion was permanently on.
+  Fixed: far mat is a same-color twin with `_EnvironmentDepthBias=1`
+  (bias≥1 fully defeats the depth test per Meta's cginc — no shadergraph
+  edit needed); near mat bias 0.06 so the floor stops eating the bottom
+  edge. New `OcclusionPhasePolicy`: non-occluding during Setup/Ready
+  (placement legibility), distance swap during walks.
+- **Frame judder (54-59 fps @40 Hz scanning, worse with extra tags in
+  view):** new `ScanProfilePolicy` — Setup/Ready = quality (full-res
+  sampleFactor 1, 20 Hz); trials = minimal (8 Hz, sampleFactor 2, plus a
+  **last-seen-tag distance gate**: scanner idles beyond tagSize×15 (~2.6 m),
+  DYNAMIC with tag size). `targetTagIds` whitelist on both scanners drops
+  non-experiment tags before triangulation (empty by default — set it once
+  the lab tag ID is known). Marker cubes now hide after placement
+  (`MarkerDisplayMode.DuringPlacementSetup`). Off-main-thread detection is
+  the next lever if a locked 72 fps still isn't reached.
+- **Trial navigation:** `SessionFlowController.NextTrial()/PreviousTrial()`
+  (clearance-guarded like redo, `trial_skip` logged); web console Prev/Next
+  buttons; new chord R-grip+R-index = next trial. Redo was never
+  once-limited — the clearance guard just read as dead; it now holds a
+  longer HUD message and pulses on re-arm.
+- **Web console ON by default** in both scenes (port 8787; `adb forward
+  tcp:8787 tcp:8787`); serves trial #/phase live + occlusion & scan-profile
+  A/B toggles for the device pass.
+- **Presets now A/B/C** (Deferred / SmoothedLive "glides back" / RawLive
+  diagnostic) so R-grip+Start actually cycles.
+- **Setup gate tooltips** (`ITagPlacementSolver.GateStatus` → HUD: "Too far —
+  step within 1.0 m (now 1.6 m)", "Moving too fast", "Capturing 6/10") and
+  **bigger HUD text** (diagnostics 13→20pt).
+- CSV template gained a `#` comment header documenting the 5 columns (the
+  tester had columns 2/3 swapped in their mental model); OperatorQuickstart
+  covers tag mounting, CSV, web console, redo semantics, session files.
+
+**Editor-verified:** compile clean; Move()/FlattenToYaw unit-driven via MCP
+Roslyn (flat/tilted/yawed tag, both player sides). **Device pass still
+needed**, checklist in the plan: perturb horizontal both mountings, single
+green + no step-over vanish, locked-72 fps A/B via cycleScanProfile, web
+next/prev under clearance guard, gate tooltips, HUD legibility, A/B/C cycle.
+
+---
+
 ## UPDATE 2026-07-06 — UX pass complete (autonomous run)
 
 The experimenter-experience pass shipped on top of everything below. Headlines:
@@ -77,10 +133,12 @@ simple single/double-AprilTag placement flow. All work below is committed in
      cycle/set methods + events for every config axis (web-bridge-ready).
 2. **Control layer** — `Assets/_Scripts/Experiment/`:
    - `ExperimenterSessionControls.cs` — in-headset chords that only call public
-     APIs. Bindings (serialized, untested on hardware): L index = Place now,
-     R-grip + L index = Recapture, R index = Redo trial, R-grip + R index =
-     Pause/Resume, Start = cycle policy, R-grip + Start = cycle variant, both
-     index triggers = cycle solver. Finesse owns sticks/grips/A/B.
+     APIs. **Current bindings (2026-07-14; the original list here was stale):**
+     HOLD L index = Place, HOLD R-grip + L index = Recapture, HOLD both index =
+     Start trials, HOLD R index = Redo, HOLD R-grip + R index = Next trial,
+     HOLD R-grip + Start = Cycle preset, PRESS Start = Pause/Resume, PRESS
+     R-stick = diagnostics. Finesse owns sticks/grips/A/B. Previous-trial is
+     web-console only.
    - `TrialLoopActivator.cs` — **arms the trial loop. Nothing else in the
      project ever set IsArmed/AutoReset/TrialSequenceActive — that is why walks
      never completed in past field sessions.** Also Pause()/Resume().

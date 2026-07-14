@@ -83,8 +83,14 @@ crashlytics-build.properties
 # Temporary auto-generated Android Assets
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
 /[Aa]ssets/[Ss]treamingAssets/aa/*
-Assets/StreamingAssets
-Assets/StreamingAssets.meta
+# Contents-wildcard (not a bare directory rule) so the template below can be
+# re-included — git cannot negate inside an excluded directory.
+Assets/StreamingAssets/*
+!Assets/StreamingAssets.meta
+# The trial-conditions template is source data: it must travel with the repo
+# (TrialLoader's device fallback copies it from the built APK).
+!Assets/StreamingAssets/trial_conditions_template.csv
+!Assets/StreamingAssets/trial_conditions_template.csv.meta
 
 .vscode/
 Assets/Oculus/VR/Editor/Tools/ovr-platform-util.exe

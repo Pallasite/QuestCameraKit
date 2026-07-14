@@ -1,0 +1,32 @@
+# trialNumber, perturbActive(true/false), moveTowardsUser(true/false), triggerDistance_m, perturbationDistance_m
+# - trialNumber MUST start at 0 (a 1-based file makes the headset warn "Trial CSV has no trial 0").
+# - Column 2 = whether the obstacle perturbs AT ALL this trial (false = inert pass).
+# - Column 3 = direction: true = toward the participant, false = away.
+# - There is NO axis column: the perturbation is horizontal, along the obstacle's
+#   placement forward = the direction the printed TOP of the (floor-mounted) tag points.
+# - Column 4 = XZ distance (m) from the participant at which the perturbation fires.
+# - Column 5 = distance (m) the obstacle moves.
+# Lines starting with # or // are ignored.
+0, true, false,0.7,0.35
+1, true, true,0.7,0.35
+2, true, true,1.4,0.7
+3, true, false,1.4,0.7
+4, true, false,0.7,0.35
+5, true, true,0.7,0.35
+6, true, true,1.4,0.7
+7, true, false,1.4,0.7
+8, true, false,0.7,0.35
+9, true, true,0.7,0.35
+10, true, true,1.4,0.7
+11, true, false,1.4,0.7
+12, true, false,0.7,0.35
+13, true, true,0.7,0.35
+14, true, true,1.4,0.7
+15, true, false,1.4,0.7
+16, true, false,0.7,0.35
+17, true, true,0.7,0.35
+18, true, true,1.4,0.7
+19, true, false,1.4,0.7
+20, true, false,0.7,0.35
+21, true, true,0.7,0.35
+22, true, true,1.4,0.7

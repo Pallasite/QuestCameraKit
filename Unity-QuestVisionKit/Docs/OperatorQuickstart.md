@@ -9,12 +9,21 @@ you: a floating panel always says what to do next.
 
 ## Before the participant arrives
 
+0. **Mount the tag flat on the floor with its printed TOP pointing along the
+   walking direction.** The obstacle appears over the tag and will move
+   forward/backward along that direction during trials. (A wall-mounted tag
+   also works — then the tag's face direction is the walking direction.)
+   Remove any OTHER AprilTags from the room: extra tags cost tracking
+   performance.
 1. Put on the headset, pick up both controllers.
 2. Stand within **1 meter** of the AprilTag (the printed marker) and look at it.
    The panel says "Tag visible" when the cameras see it.
 3. **HOLD the LEFT trigger** (about 1 second — you'll feel buzzing build up).
    A see-through blue "ghost" shows where the obstacle will appear. When the
    capture is stable, the real obstacle appears and the panel switches to READY.
+   The panel tells you live why a capture isn't landing: **"Too far"** = step
+   closer to the tag; **"Moving/turning too fast"** = hold your head still;
+   **"Capturing 6/10"** = keep holding, it's collecting samples.
 4. Fine-tune the obstacle position with the **thumbsticks** (left stick =
    slide, right stick = height + rotate). Hold the **left grip** for
    millimeter-precision. A/B buttons reset position/rotation if you overshoot.
@@ -31,11 +40,34 @@ you: a floating panel always says what to do next.
 ## During the walks (you hold the controllers)
 
 - **Participant stumbled / walk fouled?** → **HOLD the RIGHT trigger** to redo
-  that trial. It re-arms only after the participant walks clear of the obstacle.
+  that trial. It re-arms only after the participant walks clear of the
+  obstacle — the panel says "waiting for walker to clear", and the controllers
+  buzz + the panel says "re-armed" the moment they've backed off far enough
+  (about half a meter beyond the trigger distance). **Redo works as many
+  times as you need** — it only looks one-shot if the participant is still
+  standing next to the obstacle.
+- **Skip a trial?** → **HOLD R-grip + RIGHT trigger** to jump to the next
+  trial without completing the current walk. (Going *backward* is web-console
+  only — see below.)
 - **Break needed?** → **PRESS the menu button (Start)** to pause. Press again
   to resume. While paused you can also redo, or change the experimental
   condition (**HOLD R-grip + Start**).
 - Every action buzzes the controllers so you know it registered.
+
+## Watching from the laptop (web console)
+
+You don't need to wear the headset to see where the session is. With the
+headset on USB:
+
+```
+adb forward tcp:8787 tcp:8787
+```
+
+then open **http://localhost:8787/** in a browser. The page shows the live
+phase, **trial number**, condition, tag/occlusion/scan status, and has buttons
+for Start/Pause/Redo/**Prev-Next trial** and the diagnostic toggles
+(occlusion on/off, scan profile) used for on-device testing. It also works
+over Wi-Fi via the headset's IP, port 8787.
 
 ## Ending
 
@@ -58,6 +90,28 @@ still saves under `P000` with a unique timestamp — write the real ID in the la
 notebook. **Trial numbers in the CSV must start at 0, not 1** (the headset will
 warn "Trial CSV has no trial 0" if the file is 1-based).
 
+### The trial CSV columns (no header row; `#` lines are comments)
+
+| Col | Meaning |
+|---|---|
+| 1 | Trial number (0-based) |
+| 2 | **Does the obstacle perturb at all** this trial? `true`/`false` |
+| 3 | Direction: `true` = toward the participant, `false` = away |
+| 4 | Trigger distance (m) — how close the participant gets before it moves |
+| 5 | Perturbation distance (m) — how far it moves |
+
+There is **no up/down or axis column**: the perturbation is always horizontal,
+along the walking direction set by the tag (see step 0).
+
+### The files the headset saves
+
+Every app launch creates a folder under
+`Android/data/<package>/files/Sessions/` with three files: `session.log` and
+`session.json` (debug info) and **`<participant>_<timestamp>.csv` — the
+experiment data; this is the file the analyst needs.** Folders from idle
+launches are harmless to delete; the headset also auto-deletes all but the
+newest 50 on its own.
+
 ## If something looks wrong
 
 | Problem | Fix |
@@ -72,6 +126,15 @@ warn "Trial CSV has no trial 0" if the file is 1-based).
 
 **HOLD R-grip + Start** cycles between the configured conditions (works in
 SETUP, READY, or PAUSED — never mid-walk). The active condition shows on the
-panel's top line and is recorded in the data automatically. Ask the lab tech to
-add conditions: Unity Inspector → "Obstacle Placement System" →
+panel's top line and is recorded in the data automatically.
+
+The build ships three conditions:
+
+| Preset | Behavior |
+|---|---|
+| **A** | Obstacle stays locked during walks; any tracking correction is applied as a snap *between* trials (default). |
+| **B** | Obstacle **gradually glides** toward the corrected position, including during walks ("rolls back into place"). |
+| **C** | Obstacle snaps to every raw tag detection — jittery, **diagnostic only**, not for participants. |
+
+Ask the lab tech to add more: Unity Inspector → "Obstacle Placement System" →
 Obstacle Placement Controller → Presets list.
