@@ -37,7 +37,12 @@ public sealed class SingleTagSolver : ITagPlacementSolver
 
         // Feed the gate regardless of distance so the spread builds while the
         // experimenter approaches the tag, but only commit when within range.
-        _gate.AddObservation(det.Position, det.Rotation, now);
+        // The rotation is flattened to yaw-only BEFORE gating: the obstacle must
+        // stay upright and its forward axis horizontal (the perturbation axis is
+        // built from it), and the gate should measure yaw spread, not the tag's
+        // pitch/roll noise. Matches TwoTagLineSolver, which is yaw-only by
+        // construction.
+        _gate.AddObservation(det.Position, FlattenToYaw(det.Rotation), now);
 
         var camPos = CameraPosition();
         if (camPos.HasValue && Vector3.Distance(camPos.Value, det.Position) > _maxDistanceMeters)
@@ -75,5 +80,31 @@ public sealed class SingleTagSolver : ITagPlacementSolver
     {
         if (!_cameraRef && Camera.main) _cameraRef = Camera.main.transform;
         return _cameraRef ? _cameraRef.position : (Vector3?)null;
+    }
+
+    /// <summary>
+    /// Reduces a detected tag rotation to a yaw-only (upright) rotation.
+    ///
+    /// Mounting convention: the tag lies FLAT on the ground with its printed
+    /// "top" pointing along the intended walking direction. Tag basis (see
+    /// StereoAprilTagScanner corner ordering): +X = right edge, +Y = printed
+    /// top, +Z = face normal. Flat tag → the normal is vertical, so the
+    /// walking direction is the in-plane top axis (+Y). Wall-mounted tag →
+    /// the normal itself faces the walkway, so use +Z.
+    /// </summary>
+    internal static Quaternion FlattenToYaw(Quaternion tagRotation)
+    {
+        var normal = tagRotation * Vector3.forward;
+
+        // Tag lying flat (normal within ~30 degrees of vertical): forward is
+        // the printed-top axis. Otherwise (wall-mounted): forward is the
+        // normal. Both projected onto the horizontal plane.
+        var forward = Mathf.Abs(normal.y) > 0.866f
+            ? tagRotation * Vector3.up
+            : normal;
+        forward.y = 0f;
+
+        if (forward.sqrMagnitude < 1e-6f) return Quaternion.identity;
+        return Quaternion.LookRotation(forward.normalized, Vector3.up);
     }
 }

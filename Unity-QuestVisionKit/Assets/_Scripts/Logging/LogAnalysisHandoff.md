@@ -237,7 +237,7 @@ clear the device side.
 | Column                   | Type        | Meaning |
 |--------------------------|-------------|---------|
 | `anchor_pos_xyz`         | `x\|y\|z`   | World position of the anchor associated with this `correction_source`. |
-| `anchor_rot_xyzw`        | `x\|y\|z\|w`| World rotation of that anchor. |
+| `anchor_rot_xyzw`        | `x\|y\|z\|w`| World rotation of that anchor. For `correction_source=apriltag_single`, yaw-flattened (upright, pitch/roll = 0) as of 2026-07-14 — see `SessionLoggerSchema.md`; earlier sessions carried the tag's full 3-D rotation. |
 | `headset_pos_xyz`        | `x\|y\|z`   | World position of the headset (Camera.main). |
 | `headset_rot_xyzw`       | `x\|y\|z\|w`| World rotation of the headset. |
 | `controller_L_pos_xyz`   | `x\|y\|z`   | Left controller world position. Empty if the controller is outside the per-source working range. |
@@ -284,7 +284,7 @@ clear the device side.
 | `walk_index`                 | int    | Walk number, sourced from `TrialCondition.TrialNumber`. |
 | `walk_phase`                 | string | `start`, `moved`, `reset`, or `end`. |
 | `trial_active`               | 0/1    | Does the obstacle perturb during this trial? |
-| `move_towards_user`          | 0/1    | Direction of the perturbation. |
+| `move_towards_user`          | 0/1    | Direction of the perturbation. As of 2026-07-14 the motion is guaranteed **horizontal** along the obstacle's placement-yaw forward axis, and toward/away is computed on that same axis. Earlier sessions could move along the tag's full 3-D forward (vertical for a flat tag) with a world-Z sign that disagreed with the motion axis. |
 | `trigger_distance_m`         | float  | Proximity (XZ) at which the obstacle perturbs. |
 | `perturbation_distance_m`    | float  | How far the obstacle moves on trigger. |
 | `walk_duration_s`            | float  | Walk end - walk start, in seconds. Populated on `walk_phase=end`. |

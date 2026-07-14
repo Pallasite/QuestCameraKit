@@ -131,6 +131,13 @@ distinguished by `mode`:
 - `mode=applied` — `anchor_pos_xyz` / `anchor_rot_xyzw` = the obstacle base's
   **actual** (anchor/world-locked) world pose.
 
+**Rotation semantics (2026-07-14, additive — still schema v1):** for
+`apriltag_single` rows, `anchor_rot_xyzw` is **yaw-flattened** — the solver
+reduces the detected tag rotation to an upright, yaw-only rotation before
+gating/committing (flat tag: yaw from the printed-top axis; wall tag: yaw from
+the face normal). Pitch/roll are 0 by construction; earlier sessions carried
+the tag's full 3-D rotation here. `apriltag_pair` was always yaw-only.
+
 `headset_pos_xyz` / `headset_rot_xyzw` are populated on both. The headline
 analysis for this scene is the divergence between the `applied` (stable, what the
 participant sees) and `observe` (live tag) streams over a session — the
