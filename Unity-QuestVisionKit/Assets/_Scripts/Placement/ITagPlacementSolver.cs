@@ -30,4 +30,12 @@ public interface ITagPlacementSolver
 
     /// <summary>Clear internal buffers (e.g. on recapture / variant switch).</summary>
     void Reset();
+
+    /// <summary>
+    /// One-line, human-readable reason the last <see cref="TryGetPose"/> call
+    /// returned false — or "Ready" when it produced a pose. Surfaced on the HUD
+    /// guidance zone during Setup so the experimenter can see WHY a capture
+    /// isn't committing (too far / moving too fast / still collecting).
+    /// </summary>
+    string GateStatus { get; }
 }

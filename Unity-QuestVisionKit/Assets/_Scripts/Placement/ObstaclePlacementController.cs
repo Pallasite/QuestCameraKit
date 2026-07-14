@@ -159,6 +159,13 @@ public sealed class ObstaclePlacementController : MonoBehaviour
     /// <summary>Seconds since any tag was last detected (infinity if never).</summary>
     public float SecondsSinceLastTag => Time.time - _lastTagSeenTime;
 
+    /// <summary>
+    /// Live gate feedback from the active solver ("Too far — …", "Moving too
+    /// fast — …", "Capturing 6/10 — hold steady", "Ready"). Only fresh while
+    /// detections arrive — pair with <see cref="SecondsSinceLastTag"/>.
+    /// </summary>
+    public string PlacementGateStatus => _solver != null ? _solver.GateStatus : "No solver";
+
     /// <summary>Magnitude of the last applied Deferred correction (mm); -1 if none yet.</summary>
     public float LastCorrectionMm => _lastCorrectionMm;
 

@@ -11,6 +11,7 @@ public sealed class SingleTagSolver : ITagPlacementSolver
 {
     public string SourceLabel => "apriltag_single";
     public int MinTags => 1;
+    public string GateStatus { get; private set; } = "Waiting for tag";
 
     private readonly int _tagId;               // -1 = accept the nearest detected tag
     private readonly float _maxDistanceMeters;
@@ -31,9 +32,17 @@ public sealed class SingleTagSolver : ITagPlacementSolver
     public bool TryGetPose(AprilTagDisplayManager.TagWorldPose[] detections, float now, out Pose proposedPose)
     {
         proposedPose = default;
-        if (detections == null || detections.Length == 0) return false;
+        if (detections == null || detections.Length == 0)
+        {
+            GateStatus = "Waiting for tag";
+            return false;
+        }
 
-        if (!TryPickDetection(detections, out var det)) return false;
+        if (!TryPickDetection(detections, out var det))
+        {
+            GateStatus = _tagId >= 0 ? $"Tag {_tagId} not seen" : "Waiting for tag";
+            return false;
+        }
 
         // Feed the gate regardless of distance so the spread builds while the
         // experimenter approaches the tag, but only commit when within range.
@@ -45,10 +54,38 @@ public sealed class SingleTagSolver : ITagPlacementSolver
         _gate.AddObservation(det.Position, FlattenToYaw(det.Rotation), now);
 
         var camPos = CameraPosition();
-        if (camPos.HasValue && Vector3.Distance(camPos.Value, det.Position) > _maxDistanceMeters)
-            return false;
+        if (camPos.HasValue)
+        {
+            float dist = Vector3.Distance(camPos.Value, det.Position);
+            if (dist > _maxDistanceMeters)
+            {
+                GateStatus = $"Too far — step within {_maxDistanceMeters:0.0} m of the tag (now {dist:0.0} m)";
+                return false;
+            }
+        }
 
-        return _gate.IsStable(out proposedPose);
+        if (_gate.IsStable(out proposedPose))
+        {
+            GateStatus = "Ready";
+            return true;
+        }
+
+        GateStatus = DescribeGateMiss();
+        return false;
+    }
+
+    // Why didn't the full buffer pass? Position spread = the head (and with it
+    // the triangulation) is translating; rotation spread = turning. Both read
+    // to the operator as "moving too fast".
+    private string DescribeGateMiss()
+    {
+        if (_gate.SampleCount < _gate.WindowSize)
+            return $"Capturing {_gate.SampleCount}/{_gate.WindowSize} — hold steady";
+        if (_gate.LastPositionSpread > _gate.MaxPositionSpreadMeters)
+            return $"Moving too fast — hold still ({_gate.LastPositionSpread * 1000f:0.0} mm spread)";
+        if (_gate.LastRotationSpread > _gate.MaxRotationSpreadDegrees)
+            return $"Turning too fast — hold still ({_gate.LastRotationSpread:0.0}° spread)";
+        return "Stabilizing…";
     }
 
     private bool TryPickDetection(AprilTagDisplayManager.TagWorldPose[] detections,

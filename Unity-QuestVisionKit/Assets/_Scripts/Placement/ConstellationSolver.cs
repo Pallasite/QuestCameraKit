@@ -13,6 +13,7 @@ public sealed class ConstellationSolver : ITagPlacementSolver
 {
     public string SourceLabel => "apriltag";
     public int MinTags => 3;
+    public string GateStatus => "Constellation solver not implemented";
 
     private bool _warned;
 

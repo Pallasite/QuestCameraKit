@@ -12,6 +12,7 @@ public sealed class TwoTagLineSolver : ITagPlacementSolver
 {
     public string SourceLabel => "apriltag_pair";
     public int MinTags => 2;
+    public string GateStatus { get; private set; } = "Waiting for both tags";
 
     private readonly int _tagIdA;
     private readonly int _tagIdB;
@@ -34,10 +35,19 @@ public sealed class TwoTagLineSolver : ITagPlacementSolver
     public bool TryGetPose(AprilTagDisplayManager.TagWorldPose[] detections, float now, out Pose proposedPose)
     {
         proposedPose = default;
-        if (detections == null || detections.Length < 2) return false;
-
-        if (!TryFind(detections, _tagIdA, out var a) || !TryFind(detections, _tagIdB, out var b))
+        if (detections == null || detections.Length < 2)
+        {
+            GateStatus = "Waiting for both tags";
             return false;
+        }
+
+        bool hasA = TryFind(detections, _tagIdA, out var a);
+        bool hasB = TryFind(detections, _tagIdB, out var b);
+        if (!hasA || !hasB)
+        {
+            GateStatus = $"Tag {(hasA ? _tagIdB : _tagIdA)} not seen";
+            return false;
+        }
 
         Vector3 midpoint = (a.Position + b.Position) * 0.5f;
         midpoint.y += _verticalOffsetMeters;
@@ -52,7 +62,15 @@ public sealed class TwoTagLineSolver : ITagPlacementSolver
         rot *= _rotationOffset;
 
         _gate.AddObservation(midpoint, rot, now);
-        return _gate.IsStable(out proposedPose);
+        if (_gate.IsStable(out proposedPose))
+        {
+            GateStatus = "Ready";
+            return true;
+        }
+        GateStatus = _gate.SampleCount < _gate.WindowSize
+            ? $"Capturing {_gate.SampleCount}/{_gate.WindowSize} — hold steady"
+            : "Moving too fast — hold still";
+        return false;
     }
 
     private static bool TryFind(AprilTagDisplayManager.TagWorldPose[] dets, int id,

@@ -190,7 +190,19 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
                 }
                 else if (_placement.IsCaptureRequested)
                 {
-                    _sb.Append("<b>Hold steady on the tag…</b>\n")
+                    // Lead with WHY the capture isn't committing (too far /
+                    // moving too fast / still collecting) — field test: the
+                    // distance+stability gating was invisible and confusing.
+                    if (_placement.SecondsSinceLastTag > 1.5f)
+                    {
+                        _sb.Append("<color=").Append(ExperimentPalette.MidHex)
+                           .Append(">Tag lost — look back at the tag.</color>");
+                    }
+                    else
+                    {
+                        _sb.Append("<b>").Append(_placement.PlacementGateStatus).Append("</b>");
+                    }
+                    _sb.Append('\n')
                        .Append(_placement.CaptureSampleCount).Append('/').Append(_placement.CaptureWindowSize)
                        .Append(" samples · spread ")
                        .Append((_placement.CapturePositionSpreadMeters * 1000f).ToString("F1")).Append(" mm");
@@ -202,7 +214,18 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
                 }
                 else
                 {
-                    _sb.Append("Tag visible ✓\n<b>HOLD the LEFT trigger</b> to place the obstacle.");
+                    // Tag in view but pre-hold: surface a distance warning early
+                    // so the operator repositions BEFORE starting the hold.
+                    string gate = _placement.PlacementGateStatus;
+                    if (gate.StartsWith("Too far"))
+                    {
+                        _sb.Append("<color=").Append(ExperimentPalette.MidHex).Append('>')
+                           .Append(gate).Append("</color>\nThen HOLD the LEFT trigger to place the obstacle.");
+                    }
+                    else
+                    {
+                        _sb.Append("Tag visible ✓\n<b>HOLD the LEFT trigger</b> to place the obstacle.");
+                    }
                 }
                 break;
 
