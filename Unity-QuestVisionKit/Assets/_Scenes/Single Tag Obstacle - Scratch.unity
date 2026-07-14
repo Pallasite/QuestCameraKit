@@ -389,6 +389,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 6033049460946740, guid: e208b6817bf9311489aa80419d384fbd, type: 3}
+      propertyPath: markerDisplayMode
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 2053625363347814627, guid: e208b6817bf9311489aa80419d384fbd, type: 3}
       propertyPath: m_Name
       value: April Tags Logic and Managers
@@ -733,6 +737,8 @@ GameObject:
   - component: {fileID: 1146725259}
   - component: {fileID: 1146725263}
   - component: {fileID: 1146725264}
+  - component: {fileID: 1146725266}
+  - component: {fileID: 1146725265}
   m_Layer: 0
   m_Name: Obstacle Placement System
   m_TagString: Untagged
@@ -784,6 +790,14 @@ MonoBehaviour:
   - name: A
     solver: 0
     policy: 0
+    variant: 0
+  - name: B
+    solver: 0
+    policy: 1
+    variant: 0
+  - name: C
+    solver: 0
+    policy: 2
     variant: 0
   trackingVariant: 0
   visualPolicy: 0
@@ -849,12 +863,46 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 43729e994309e534a936528ef9275699, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RemoteConsoleServer
-  startServerOnEnable: 0
+  startServerOnEnable: 1
   port: 8787
   flow: {fileID: 0}
   placement: {fileID: 0}
   sequencer: {fileID: 0}
   hud: {fileID: 0}
+  scanPolicy: {fileID: 0}
+  tagManager: {fileID: 0}
+--- !u!114 &1146725265
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1146725258}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ecc0168d38060de41be506f8001191fc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ScanProfilePolicy
+  flow: {fileID: 0}
+  tagManager: {fileID: 0}
+  qualityScanRateHz: 20
+  qualitySampleFactor: 1
+  minimalScanRateHz: 8
+  minimalSampleFactor: 2
+  minimalDistanceGate: 1
+--- !u!114 &1146725266
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1146725258}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f2be17bf2b2309348aeab46fb1d9c2d3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::OcclusionPhasePolicy
+  flow: {fileID: 0}
 --- !u!1001 &1152822077
 PrefabInstance:
   m_ObjectHideFlags: 0

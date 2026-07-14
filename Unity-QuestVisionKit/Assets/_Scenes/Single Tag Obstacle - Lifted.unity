@@ -4244,6 +4244,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::AprilTagScanner
   sampleFactor: 2
   tagSizeMeters: 0.171
+  targetTagIds: 
 --- !u!114 &665711653
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -4259,12 +4260,16 @@ MonoBehaviour:
   placementMode: 0
   markerDisplayScale: 1
   markerPool: {fileID: 0}
+  markerDisplayMode: 1
+  placementGate: {fileID: 0}
   proximityGate: {fileID: 0}
   maxScanDistanceMeters: 2.5
   scanDistanceHysteresisMeters: 0.5
   gateBypassDuringStreaming: 1
   enableScanning: 1
   scanRateHz: 40
+  distanceGateToLastTag: 0
+  scanCutoffTagMultiples: 15
 --- !u!4 &665711654
 Transform:
   m_ObjectHideFlags: 0
@@ -4422,6 +4427,7 @@ MonoBehaviour:
   sampleFactor: 2
   decimation: 2
   minDecisionMargin: 30
+  targetTagIds: 
   maxFrameTimeDeltaMs: 30
   tagSizeMeters: 0.171
   calibrationSampleFactor: 2
@@ -9520,6 +9526,8 @@ GameObject:
   - component: {fileID: 1624277463}
   - component: {fileID: 1624277467}
   - component: {fileID: 1624277468}
+  - component: {fileID: 1624277470}
+  - component: {fileID: 1624277469}
   m_Layer: 0
   m_Name: Obstacle Placement System
   m_TagString: Untagged
@@ -9571,6 +9579,14 @@ MonoBehaviour:
   - name: A
     solver: 0
     policy: 0
+    variant: 0
+  - name: B
+    solver: 0
+    policy: 1
+    variant: 0
+  - name: C
+    solver: 0
+    policy: 2
     variant: 0
   trackingVariant: 0
   visualPolicy: 0
@@ -9636,12 +9652,46 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 43729e994309e534a936528ef9275699, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RemoteConsoleServer
-  startServerOnEnable: 0
+  startServerOnEnable: 1
   port: 8787
   flow: {fileID: 0}
   placement: {fileID: 0}
   sequencer: {fileID: 0}
   hud: {fileID: 0}
+  scanPolicy: {fileID: 0}
+  tagManager: {fileID: 0}
+--- !u!114 &1624277469
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1624277462}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ecc0168d38060de41be506f8001191fc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ScanProfilePolicy
+  flow: {fileID: 0}
+  tagManager: {fileID: 0}
+  qualityScanRateHz: 20
+  qualitySampleFactor: 1
+  minimalScanRateHz: 8
+  minimalSampleFactor: 2
+  minimalDistanceGate: 1
+--- !u!114 &1624277470
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1624277462}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f2be17bf2b2309348aeab46fb1d9c2d3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::OcclusionPhasePolicy
+  flow: {fileID: 0}
 --- !u!1 &1633560988
 GameObject:
   m_ObjectHideFlags: 0
