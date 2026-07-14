@@ -47,6 +47,12 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     [Tooltip("Reject detections below this AprilTag decision margin (lower = noisier).")]
     [SerializeField] private float minDecisionMargin = 30f;
 
+    [Tooltip("When non-empty, per-frame scans keep only these tag IDs — other decoded tags " +
+             "are dropped before triangulation and pose solving (the dominant per-tag cost). " +
+             "Calibration sweeps ignore this filter: the constellation flow wants every tag. " +
+             "Empty = keep all (legacy behavior).")]
+    [SerializeField] private int[] targetTagIds = new int[0];
+
     [Tooltip("Reject paired frames whose capture timestamps differ by more than this (in milliseconds). " +
              "Larger deltas mean the user moved their head between L and R captures and triangulation rays no longer share a moment.")]
     [SerializeField] private float maxFrameTimeDeltaMs = 30f;
@@ -100,6 +106,29 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     {
         get => tagSizeMeters;
         set => tagSizeMeters = value;
+    }
+
+    /// <summary>Per-frame downsampling divisor (1 = full camera resolution).</summary>
+    public int SampleFactor
+    {
+        get => sampleFactor;
+        set => sampleFactor = Mathf.Max(1, value);
+    }
+
+    /// <summary>Per-frame tag-ID whitelist; empty keeps every decoded tag.</summary>
+    public int[] TargetTagIds
+    {
+        get => targetTagIds;
+        set => targetTagIds = value ?? new int[0];
+    }
+
+    private bool IsTargetTag(int id)
+    {
+        var ids = targetTagIds;
+        if (ids == null || ids.Length == 0) return true;
+        for (int i = 0; i < ids.Length; i++)
+            if (ids[i] == id) return true;
+        return false;
     }
 
     public enum RotationSolver
@@ -251,7 +280,7 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
             var dtMs = Math.Abs((left.Timestamp - right.Timestamp).TotalMilliseconds);
             if (dtMs > maxFrameTimeDeltaMs) return Array.Empty<AprilTagResult>();
 
-            return await DetectAndTriangulateAsync(left, right, sampleFactor, decimation);
+            return await DetectAndTriangulateAsync(left, right, sampleFactor, decimation, applyTagFilter: true);
         }
         finally
         {
@@ -295,7 +324,7 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
                 var dtMs = Math.Abs((left.Timestamp - right.Timestamp).TotalMilliseconds);
                 if (dtMs > maxFrameTimeDeltaMs) continue;
 
-                var perFrame = await DetectAndTriangulateAsync(left, right, calibrationSampleFactor, calibrationDecimation);
+                var perFrame = await DetectAndTriangulateAsync(left, right, calibrationSampleFactor, calibrationDecimation, applyTagFilter: false);
                 if (perFrame.Length == 0)
                 {
                     captured++;
@@ -352,7 +381,8 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     }
 
     private async Task<AprilTagResult[]> DetectAndTriangulateAsync(
-        CaptureFrame left, CaptureFrame right, int sampleFactorToUse, int decimationToUse)
+        CaptureFrame left, CaptureFrame right, int sampleFactorToUse, int decimationToUse,
+        bool applyTagFilter)
     {
         var (targetW, targetH) = GetTargetDimensions(left.Texture, sampleFactorToUse);
         if (!EnsureResources(targetW, targetH, decimationToUse)) return Array.Empty<AprilTagResult>();
@@ -374,7 +404,7 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
         _leftDetector.ProcessImage(new ReadOnlySpan<Color32>(leftPixels));
         _rightDetector.ProcessImage(new ReadOnlySpan<Color32>(rightPixels));
 
-        return Triangulate(left, right, targetW, targetH);
+        return Triangulate(left, right, targetW, targetH, applyTagFilter);
     }
 
     private static Vector3 ComponentwiseMedian(List<Vector3[]> obs, int cornerIndex)
@@ -403,7 +433,8 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
         return new Vector3(xs[mid], ys[mid], zs[mid]);
     }
 
-    private AprilTagResult[] Triangulate(CaptureFrame left, CaptureFrame right, int width, int height)
+    private AprilTagResult[] Triangulate(CaptureFrame left, CaptureFrame right, int width, int height,
+                                         bool applyTagFilter)
     {
         var leftIntr = ScaleIntrinsics(left.Intrinsics, left.Resolution, width, height);
         var rightIntr = ScaleIntrinsics(right.Intrinsics, right.Resolution, width, height);
@@ -412,6 +443,7 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
         foreach (var d in _rightDetector.Detections)
         {
             if (d.DecisionMargin < minDecisionMargin) continue;
+            if (applyTagFilter && !IsTargetTag(d.ID)) continue;
             _rightById[d.ID] = d;
         }
 
@@ -425,6 +457,7 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
         foreach (var leftDet in _leftDetector.Detections)
         {
             if (leftDet.DecisionMargin < minDecisionMargin) continue;
+            if (applyTagFilter && !IsTargetTag(leftDet.ID)) continue;
             if (!_rightById.TryGetValue(leftDet.ID, out var rightDet)) continue;
 
             // Capture per-corner pixel observations and triangulated 3D positions

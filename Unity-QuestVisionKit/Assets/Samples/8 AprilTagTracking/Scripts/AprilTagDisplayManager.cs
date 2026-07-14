@@ -46,6 +46,21 @@ public class AprilTagDisplayManager : MonoBehaviour
         public float CornerResidualMeters;
     }
 
+    public enum MarkerDisplayMode
+    {
+        /// <summary>Legacy / debug — a marker cube tracks every detection batch.</summary>
+        Always,
+        /// <summary>
+        /// Gate on the single/double-tag placement flow: markers show while the
+        /// obstacle is NOT yet placed (Setup), then hide so raw unsmoothed cubes
+        /// don't jitter in the participant's view during walks. Mirrors
+        /// AprilTagWireframeVisualizer's mode of the same name.
+        /// </summary>
+        DuringPlacementSetup,
+        /// <summary>Never show marker cubes.</summary>
+        Never,
+    }
+
     [SerializeField] private PlacementMode placementMode = PlacementMode.Direct;
 
     [Tooltip("Visual scale multiplier for marker display (does not affect pose accuracy).")]
@@ -53,6 +68,16 @@ public class AprilTagDisplayManager : MonoBehaviour
 
     [Tooltip("Explicit marker pool reference. Falls back to MarkerPool.Instance if not set.")]
     [SerializeField] private MarkerPool markerPool;
+
+    [Tooltip("When marker cubes are shown. Default Always keeps sample scenes unchanged; the " +
+             "experiment scenes use DuringPlacementSetup — markers update at the raw scan rate " +
+             "with no smoothing, so they visibly jitter and don't belong in a participant's view.")]
+    [SerializeField] private MarkerDisplayMode markerDisplayMode = MarkerDisplayMode.Always;
+
+    [Tooltip("Used by MarkerDisplayMode.DuringPlacementSetup: markers show while this placement " +
+             "controller has no placed obstacle. Auto-resolved (scene-wide) if left null; when " +
+             "none exists the mode falls back to always-on (fail-visible, like the wireframe).")]
+    [SerializeField] private ObstaclePlacementController placementGate;
 
     [Header("Proximity gate (skip per-frame scan when far from any reference tag)")]
     [Tooltip("Optional ConstellationDriftCorrector reference used to gate per-frame scans by distance " +
@@ -87,6 +112,21 @@ public class AprilTagDisplayManager : MonoBehaviour
              "streaming-calibration sweep, which always runs full-rate.")]
     [SerializeField, Range(0.5f, 90f)] private float scanRateHz = 5f;
 
+    [Header("Distance gate to the last-seen tag (single/double-tag flow)")]
+    [Tooltip("Skip scans when the camera is farther than (tag size x scanCutoffTagMultiples) from " +
+             "the last detected tag position. OFF by default (sample scenes unchanged); the " +
+             "experiment's ScanProfilePolicy turns it on during trials. Inactive until the first " +
+             "detection — the tag has to be found before there is a position to gate against.")]
+    [SerializeField] private bool distanceGateToLastTag = false;
+
+    [Tooltip("Cutoff distance in tag-size multiples — DYNAMIC: editing the scanner's tag size " +
+             "rescales the cutoff automatically. Pose quality is a function of pixels-on-tag: " +
+             "translation error ~1% of distance out to ~5x the tag side, orientation degrades " +
+             "steeply past ~10x, detection dies around ~15x at passthrough resolution. Default 15 " +
+             "(~2.6 m for the 0.171 m tag) = beyond detection usefulness, so gated scans lose " +
+             "nothing.")]
+    [SerializeField, Range(3f, 30f)] private float scanCutoffTagMultiples = 15f;
+
     /// <summary>
     /// Fired each frame that tags are detected, after world poses are computed.
     /// Subscribe from additional visualizers (e.g. AprilTagWireframeVisualizer)
@@ -114,6 +154,37 @@ public class AprilTagDisplayManager : MonoBehaviour
     // when we're throttling.
     private float _nextScanTime;
 
+    // Last-seen-tag gate state (hysteresis-latched like the constellation gate).
+    private Vector3? _lastKnownTagPos;
+    private bool _inTagRange = true;
+
+    // ---- runtime knobs (ScanProfilePolicy / web console) ----
+
+    /// <summary>Per-frame scan rate in Hz (clamped to the Inspector range).</summary>
+    public float ScanRateHz
+    {
+        get => scanRateHz;
+        set => scanRateHz = Mathf.Clamp(value, 0.5f, 90f);
+    }
+
+    /// <summary>Enable/disable the last-seen-tag distance gate.</summary>
+    public bool DistanceGateToLastTag
+    {
+        get => distanceGateToLastTag;
+        set => distanceGateToLastTag = value;
+    }
+
+    /// <summary>Computed gate cutoff in meters: scanner tag size x multiplier.</summary>
+    public float ScanCutoffMeters
+        => (_scanner != null ? _scanner.TagSizeMeters : 0.171f) * scanCutoffTagMultiples;
+
+    /// <summary>True while the distance gate is actively suppressing scans.</summary>
+    public bool ScanGatedByDistance
+        => distanceGateToLastTag && _lastKnownTagPos.HasValue && !_inTagRange;
+
+    /// <summary>The active scanner (stereo preferred), for profile/config access.</summary>
+    public IAprilTagScanner Scanner => _scanner;
+
     private void Awake()
     {
         // Prefer a stereo scanner if present (it triangulates and avoids the
@@ -131,6 +202,10 @@ public class AprilTagDisplayManager : MonoBehaviour
         // (corrector + display manager on the same GameObject) so the gate
         // works zero-touch.
         if (!proximityGate) proximityGate = GetComponent<ConstellationDriftCorrector>();
+
+        // Placement gate for MarkerDisplayMode.DuringPlacementSetup (scene-wide,
+        // like the wireframe visualizer's equivalent field).
+        if (!placementGate) placementGate = FindAnyObjectByType<ObstaclePlacementController>();
     }
 
     private void Update()
@@ -147,8 +222,39 @@ public class AprilTagDisplayManager : MonoBehaviour
         if (!inSweep && Time.time < _nextScanTime) return;
 
         if (!ShouldScanThisFrame()) return;
+        if (!WithinLastTagRange()) return;
         _nextScanTime = Time.time + 1f / Mathf.Max(0.01f, scanRateHz);
         RefreshMarkers();
+    }
+
+    /// <summary>
+    /// Last-seen-tag distance gate. True (scan) when the gate is off, no tag
+    /// has ever been seen (must scan to find it), or the camera is within the
+    /// cutoff. Hysteresis: drop out beyond cutoff + hysteresis, re-enter
+    /// within cutoff — same latching as the constellation gate.
+    /// </summary>
+    private bool WithinLastTagRange()
+    {
+        if (!distanceGateToLastTag || !_lastKnownTagPos.HasValue) return true;
+
+        if (!_cameraTransform)
+        {
+            var cam = Camera.main;
+            if (!cam) return true;
+            _cameraTransform = cam.transform;
+        }
+
+        float cutoff = ScanCutoffMeters;
+        float dist = Vector3.Distance(_cameraTransform.position, _lastKnownTagPos.Value);
+        if (_inTagRange)
+        {
+            if (dist > cutoff + scanDistanceHysteresisMeters) _inTagRange = false;
+        }
+        else
+        {
+            if (dist <= cutoff) _inTagRange = true;
+        }
+        return _inTagRange;
     }
 
     /// <summary>
@@ -231,6 +337,7 @@ public class AprilTagDisplayManager : MonoBehaviour
 
         // Build world poses and collect them for the event
         var worldPoses = new List<TagWorldPose>(results.Length);
+        bool showMarkers = ShouldShowMarkers();
 
         foreach (var result in results)
         {
@@ -248,6 +355,11 @@ public class AprilTagDisplayManager : MonoBehaviour
                 SolverUsed = result.solverUsed,
                 CornerResidualMeters = result.cornerResidualMeters,
             });
+
+            // Feed the last-seen-tag distance gate regardless of marker display.
+            _lastKnownTagPos = worldPos;
+
+            if (!showMarkers) continue;   // markers self-hide ~2 s after their last update
 
             var marker = GetOrCreateMarker(result.tagId);
             if (!marker) continue;
@@ -321,6 +433,22 @@ public class AprilTagDisplayManager : MonoBehaviour
                 + Vector3.Distance(corners[2], corners[3])
                 + Vector3.Distance(corners[3], corners[0]);
         return sum * 0.25f;
+    }
+
+    private bool ShouldShowMarkers()
+    {
+        switch (markerDisplayMode)
+        {
+            case MarkerDisplayMode.Never:
+                return false;
+            case MarkerDisplayMode.DuringPlacementSetup:
+                // No placement controller -> fall back to always-on so markers
+                // never silently vanish in a misconfigured scene.
+                if (placementGate == null) return true;
+                return !placementGate.IsPlaced;
+            default:
+                return true;
+        }
     }
 
     private MarkerController GetOrCreateMarker(int tagId)

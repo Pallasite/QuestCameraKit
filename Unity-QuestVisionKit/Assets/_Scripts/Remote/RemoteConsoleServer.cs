@@ -21,7 +21,7 @@ using UnityEngine;
 /// Endpoints:
 ///   GET  /            the dashboard page (self-contained HTML)
 ///   GET  /status      JSON snapshot (cached on the main thread — no cross-thread Unity calls)
-///   POST /action/{startTrials|pause|resume|redo|nextTrial|prevTrial|cyclePreset|recapture|place|toggleDiagnostics|toggleOcclusion}
+///   POST /action/{startTrials|pause|resume|redo|nextTrial|prevTrial|cyclePreset|recapture|place|toggleDiagnostics|toggleOcclusion|cycleScanProfile}
 ///                     enqueued to the main thread; responds 202 immediately
 ///   POST /participant body = ID; written to participant.txt (applies NEXT launch —
 ///                     the current session's CSV is already open)
@@ -41,6 +41,8 @@ public sealed class RemoteConsoleServer : MonoBehaviour
     [SerializeField] private ObstaclePlacementController placement;
     [SerializeField] private TrialSequencer sequencer;
     [SerializeField] private SessionHUD hud;
+    [SerializeField] private ScanProfilePolicy scanPolicy;
+    [SerializeField] private AprilTagDisplayManager tagManager;
 
     private HttpListener _listener;
     private Thread _thread;
@@ -57,6 +59,8 @@ public sealed class RemoteConsoleServer : MonoBehaviour
         if (!placement) placement = FindAnyObjectByType<ObstaclePlacementController>();
         if (!sequencer) sequencer = FindAnyObjectByType<TrialSequencer>();
         if (!hud) hud = FindAnyObjectByType<SessionHUD>();
+        if (!scanPolicy) scanPolicy = FindAnyObjectByType<ScanProfilePolicy>();
+        if (!tagManager) tagManager = FindAnyObjectByType<AprilTagDisplayManager>();
     }
 
     private void OnEnable()
@@ -197,6 +201,14 @@ public sealed class RemoteConsoleServer : MonoBehaviour
             case "place": _mainThread.Enqueue(() => placement?.CapturePlacement()); return true;
             case "toggleDiagnostics": _mainThread.Enqueue(() => hud?.ToggleDiagnostics()); return true;
             case "toggleOcclusion": _mainThread.Enqueue(ToggleOcclusion); return true;
+            case "cycleScanProfile":
+                _mainThread.Enqueue(() =>
+                {
+                    if (scanPolicy == null) return;
+                    scanPolicy.CycleMode();
+                    hud?.ShowTransient($"Scan profile: {scanPolicy.ModeLabel}", 3f);
+                });
+                return true;
             default: return false;
         }
     }
@@ -253,6 +265,14 @@ public sealed class RemoteConsoleServer : MonoBehaviour
             sb.Append("\"tagAgeS\":").Append(float.IsInfinity(tagAge) ? "-1" : tagAge.ToString("F1", CultureInfo.InvariantCulture)).Append(',');
             sb.Append("\"lastCorrectionMm\":").Append(placement.LastCorrectionMm.ToString("F1", CultureInfo.InvariantCulture)).Append(',');
         }
+        if (scanPolicy != null)
+            sb.Append("\"scanProfile\":\"").Append(Escape(scanPolicy.ModeLabel)).Append("\",");
+        if (tagManager != null)
+        {
+            sb.Append("\"scanRateHz\":").Append(tagManager.ScanRateHz.ToString("F0", CultureInfo.InvariantCulture)).Append(',');
+            sb.Append("\"scanGated\":").Append(tagManager.ScanGatedByDistance ? "true" : "false").Append(',');
+            sb.Append("\"scanCutoffM\":").Append(tagManager.ScanCutoffMeters.ToString("F2", CultureInfo.InvariantCulture)).Append(',');
+        }
         sb.Append("\"occlusion\":\"").Append(_occlusionForcedOff ? "forced-off" : "auto").Append("\",");
         bool anyOccluding = false;
         foreach (var swapper in OcclusionSwapper.AllInstances)
@@ -304,6 +324,7 @@ public sealed class RemoteConsoleServer : MonoBehaviour
  <button class='warn' onclick=""act('recapture')"">Re-place</button>
  <button onclick=""act('toggleDiagnostics')"">Diagnostics</button>
  <button onclick=""act('toggleOcclusion')"">Occlusion</button>
+ <button onclick=""act('cycleScanProfile')"">Scan profile</button>
 </div>
 <div style='margin-top:1rem'>
  <input id='pid' placeholder='participant ID (next launch)'>
@@ -323,6 +344,7 @@ async function poll(){
    ['Variant',s.variant],['Placed',s.placed],['Anchor',s.anchor],
    ['Tag seen',s.tagAgeS<0?'never':s.tagAgeS+'s ago'],['Last corr',s.lastCorrectionMm+' mm'],
    ['Occlusion',s.occlusion+(s.occluding?' (occluding)':'')],
+   ['Scan',s.scanProfile+' @'+s.scanRateHz+'Hz'+(s.scanGated?' (idle >'+s.scanCutoffM+'m)':'')],
    ['Log rows',s.logRows],['Participant',s.participant]];
   document.getElementById('grid').innerHTML=rows.map(r=>'<div><b>'+r[0]+'</b></div><div>'+r[1]+'</div>').join('');
   err('');

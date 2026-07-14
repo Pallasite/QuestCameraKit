@@ -58,6 +58,34 @@ public class AprilTagScanner : MonoBehaviour, IAprilTagScanner
     [Tooltip("Physical size of the AprilTag in meters (edge-to-edge of the black border).")]
     [SerializeField] private float tagSizeMeters = 0.171f;
 
+    [Tooltip("When non-empty, only these tag IDs are kept — other decoded tags are dropped " +
+             "before any per-tag work (no pose, no marker, no event). Cuts per-tag cost and " +
+             "visual noise in spaces with extra tags. Empty = keep all (legacy behavior).")]
+    [SerializeField] private int[] targetTagIds = new int[0];
+
+    public float TagSizeMeters => tagSizeMeters;
+
+    public int SampleFactor
+    {
+        get => sampleFactor;
+        set => sampleFactor = Mathf.Max(1, value);
+    }
+
+    public int[] TargetTagIds
+    {
+        get => targetTagIds;
+        set => targetTagIds = value ?? new int[0];
+    }
+
+    private bool IsTargetTag(int id)
+    {
+        var ids = targetTagIds;
+        if (ids == null || ids.Length == 0) return true;
+        for (int i = 0; i < ids.Length; i++)
+            if (ids[i] == id) return true;
+        return false;
+    }
+
     private PassthroughCameraAccess _cameraAccess;
     private RenderTexture _downsampledTexture;
     private ComputeShader _downsampleShader;
@@ -188,6 +216,8 @@ public class AprilTagScanner : MonoBehaviour, IAprilTagScanner
         var results = new System.Collections.Generic.List<AprilTagResult>();
         foreach (var tag in _tagDetector.DetectedTags)
         {
+            if (!IsTargetTag(tag.ID)) continue;
+
             results.Add(new AprilTagResult
             {
                 tagId = tag.ID,
