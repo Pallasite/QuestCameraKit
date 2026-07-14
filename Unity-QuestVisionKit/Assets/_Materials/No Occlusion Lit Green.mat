@@ -110,7 +110,7 @@ Material:
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
     - _DstBlendAlpha: 0
-    - _EnvironmentDepthBias: 0
+    - _EnvironmentDepthBias: 1
     - _EnvironmentReflections: 1
     - _EnvironmentalReflections: 0
     - _GlossMapScale: 1
@@ -139,7 +139,7 @@ Material:
     - _ZWrite: 1
     m_Colors:
     - _BaseColor: {r: 0, g: 0.745283, b: 0.46056733, a: 1}
-    - _Base_Color: {r: 0, g: 1, b: 0.46207285, a: 1}
+    - _Base_Color: {r: 0, g: 0.74509805, b: 0.45882353, a: 1}
     - _Color: {r: 0, g: 0.745283, b: 0.4605673, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _SpecColor: {r: 0.19999993, g: 0.19999993, b: 0.19999993, a: 0.284}

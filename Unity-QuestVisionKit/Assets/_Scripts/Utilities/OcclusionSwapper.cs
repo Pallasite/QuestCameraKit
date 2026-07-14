@@ -80,6 +80,9 @@ public class OcclusionSwapper : MonoBehaviour
     private Renderer _renderer;
     private bool _isOccluding = false;
 
+    /// <summary>Whether this renderer currently uses the depth-occlusion material.</summary>
+    public bool IsOccluding => _isOccluding;
+
     // ==================== LIFECYCLE ====================
 
     private void Awake()

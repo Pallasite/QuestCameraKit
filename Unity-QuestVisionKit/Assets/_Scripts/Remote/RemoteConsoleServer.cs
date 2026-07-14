@@ -21,7 +21,7 @@ using UnityEngine;
 /// Endpoints:
 ///   GET  /            the dashboard page (self-contained HTML)
 ///   GET  /status      JSON snapshot (cached on the main thread — no cross-thread Unity calls)
-///   POST /action/{startTrials|pause|resume|redo|cyclePreset|recapture|place|toggleDiagnostics}
+///   POST /action/{startTrials|pause|resume|redo|cyclePreset|recapture|place|toggleDiagnostics|toggleOcclusion}
 ///                     enqueued to the main thread; responds 202 immediately
 ///   POST /participant body = ID; written to participant.txt (applies NEXT launch —
 ///                     the current session's CSV is already open)
@@ -194,7 +194,29 @@ public sealed class RemoteConsoleServer : MonoBehaviour
             case "recapture": _mainThread.Enqueue(() => placement?.Recapture()); return true;
             case "place": _mainThread.Enqueue(() => placement?.CapturePlacement()); return true;
             case "toggleDiagnostics": _mainThread.Enqueue(() => hud?.ToggleDiagnostics()); return true;
+            case "toggleOcclusion": _mainThread.Enqueue(ToggleOcclusion); return true;
             default: return false;
+        }
+    }
+
+    // Occlusion investigation knob. Forced-off wins until toggled back, but a
+    // phase transition re-applies OcclusionPhasePolicy and can override it —
+    // acceptable for a diagnostic; mid-Running there are no transitions.
+    private bool _occlusionForcedOff;
+
+    private void ToggleOcclusion()
+    {
+        _occlusionForcedOff = !_occlusionForcedOff;
+        if (_occlusionForcedOff)
+        {
+            OcclusionSwapper.SetAllAutoSwapEnabled(false);
+            OcclusionSwapper.SetAllOcclusion(false);
+            hud?.ShowTransient("Occlusion OFF (console override)", 3f);
+        }
+        else
+        {
+            OcclusionSwapper.SetAllAutoSwapEnabled(true);
+            hud?.ShowTransient("Occlusion auto (distance swap)", 3f);
         }
     }
 
@@ -229,6 +251,11 @@ public sealed class RemoteConsoleServer : MonoBehaviour
             sb.Append("\"tagAgeS\":").Append(float.IsInfinity(tagAge) ? "-1" : tagAge.ToString("F1", CultureInfo.InvariantCulture)).Append(',');
             sb.Append("\"lastCorrectionMm\":").Append(placement.LastCorrectionMm.ToString("F1", CultureInfo.InvariantCulture)).Append(',');
         }
+        sb.Append("\"occlusion\":\"").Append(_occlusionForcedOff ? "forced-off" : "auto").Append("\",");
+        bool anyOccluding = false;
+        foreach (var swapper in OcclusionSwapper.AllInstances)
+            if (swapper != null && swapper.IsOccluding) { anyOccluding = true; break; }
+        sb.Append("\"occluding\":").Append(anyOccluding ? "true" : "false").Append(',');
         if (SessionLogger.Instance != null)
         {
             sb.Append("\"logRunning\":").Append(SessionLogger.Instance.IsRunning ? "true" : "false").Append(',');
@@ -272,6 +299,7 @@ public sealed class RemoteConsoleServer : MonoBehaviour
  <button onclick=""act('cyclePreset')"">Cycle condition</button>
  <button class='warn' onclick=""act('recapture')"">Re-place</button>
  <button onclick=""act('toggleDiagnostics')"">Diagnostics</button>
+ <button onclick=""act('toggleOcclusion')"">Occlusion</button>
 </div>
 <div style='margin-top:1rem'>
  <input id='pid' placeholder='participant ID (next launch)'>
@@ -290,6 +318,7 @@ async function poll(){
   const rows=[['Trial',s.trial],['Preset',s.preset],['Solver',s.solver],['Policy',s.policy],
    ['Variant',s.variant],['Placed',s.placed],['Anchor',s.anchor],
    ['Tag seen',s.tagAgeS<0?'never':s.tagAgeS+'s ago'],['Last corr',s.lastCorrectionMm+' mm'],
+   ['Occlusion',s.occlusion+(s.occluding?' (occluding)':'')],
    ['Log rows',s.logRows],['Participant',s.participant]];
   document.getElementById('grid').innerHTML=rows.map(r=>'<div><b>'+r[0]+'</b></div><div>'+r[1]+'</div>').join('');
   err('');
