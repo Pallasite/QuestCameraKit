@@ -89,6 +89,24 @@ public class TrialSequencer : MonoBehaviour
     }
 
     /// <summary>
+    /// Jump directly to a specific trial WITHOUT completing the current one:
+    /// resets the obstacle to base (no correction, no advance) and loads the
+    /// target condition. Returns false — changing nothing — when the index has
+    /// no row in the CSV. Unlike <see cref="LoadTrial"/>, a miss here must not
+    /// fire <see cref="OnSequenceComplete"/>: stepping back from the first
+    /// trial (or forward past the last) must not end the session.
+    /// </summary>
+    public bool JumpToTrial(int index)
+    {
+        if (trialLoader == null || trialLoader.MissingData) return false;
+        if (!trialLoader.TrialConditions.ContainsKey(index)) return false;
+
+        if (obstacleController != null) obstacleController.ResetForRedo();
+        LoadTrial(index);
+        return true;
+    }
+
+    /// <summary>
     /// Load a specific trial by index. If the index is out of range,
     /// fires <see cref="OnSequenceComplete"/>.
     /// </summary>

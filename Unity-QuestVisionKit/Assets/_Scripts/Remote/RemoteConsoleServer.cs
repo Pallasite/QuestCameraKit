@@ -21,7 +21,7 @@ using UnityEngine;
 /// Endpoints:
 ///   GET  /            the dashboard page (self-contained HTML)
 ///   GET  /status      JSON snapshot (cached on the main thread — no cross-thread Unity calls)
-///   POST /action/{startTrials|pause|resume|redo|cyclePreset|recapture|place|toggleDiagnostics|toggleOcclusion}
+///   POST /action/{startTrials|pause|resume|redo|nextTrial|prevTrial|cyclePreset|recapture|place|toggleDiagnostics|toggleOcclusion}
 ///                     enqueued to the main thread; responds 202 immediately
 ///   POST /participant body = ID; written to participant.txt (applies NEXT launch —
 ///                     the current session's CSV is already open)
@@ -190,6 +190,8 @@ public sealed class RemoteConsoleServer : MonoBehaviour
             case "pause": _mainThread.Enqueue(() => flow?.Pause()); return true;
             case "resume": _mainThread.Enqueue(() => flow?.Resume()); return true;
             case "redo": _mainThread.Enqueue(() => flow?.RedoTrial()); return true;
+            case "nextTrial": _mainThread.Enqueue(() => flow?.NextTrial()); return true;
+            case "prevTrial": _mainThread.Enqueue(() => flow?.PreviousTrial()); return true;
             case "cyclePreset": _mainThread.Enqueue(() => placement?.CyclePreset()); return true;
             case "recapture": _mainThread.Enqueue(() => placement?.Recapture()); return true;
             case "place": _mainThread.Enqueue(() => placement?.CapturePlacement()); return true;
@@ -296,6 +298,8 @@ public sealed class RemoteConsoleServer : MonoBehaviour
  <button onclick=""act('pause')"">Pause</button>
  <button onclick=""act('resume')"">Resume</button>
  <button onclick=""act('redo')"">Redo trial</button>
+ <button onclick=""act('prevTrial')"">&#9664; Prev trial</button>
+ <button onclick=""act('nextTrial')"">Next trial &#9654;</button>
  <button onclick=""act('cyclePreset')"">Cycle condition</button>
  <button class='warn' onclick=""act('recapture')"">Re-place</button>
  <button onclick=""act('toggleDiagnostics')"">Diagnostics</button>

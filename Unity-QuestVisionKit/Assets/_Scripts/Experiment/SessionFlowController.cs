@@ -122,7 +122,11 @@ public sealed class SessionFlowController : MonoBehaviour
                 {
                     _waitingForRedoClearance = false;
                     obstacleController?.ArmObstacle();
-                    Hud("Walker clear — trial re-armed");
+                    // Field test: the clearance guard read as "redo did nothing".
+                    // Longer transient + a pulse so re-arm registers without
+                    // looking at the panel.
+                    Hud("Walker clear — trial re-armed", 4.5f);
+                    PulseControllers();
                 }
                 break;
         }
@@ -196,7 +200,7 @@ public sealed class SessionFlowController : MonoBehaviour
         {
             obstacleController.DisarmObstacle();
             _waitingForRedoClearance = true;
-            Hud("Redo — waiting for walker to clear the obstacle");
+            Hud("Redo — waiting for walker to clear the obstacle", 4.5f);
         }
         else
         {
@@ -204,6 +208,52 @@ public sealed class SessionFlowController : MonoBehaviour
         }
 
         Log("trial_redo", $"index={index};phase={Phase}");
+    }
+
+    /// <summary>Skip forward to the next trial without completing the current walk.</summary>
+    public void NextTrial() => JumpBy(+1);
+
+    /// <summary>Step back to the previous trial (e.g. to re-run an earlier condition).</summary>
+    public void PreviousTrial() => JumpBy(-1);
+
+    // Manual trial navigation. Field test: the only way to advance was a
+    // completed walk, and there was no way back at all. Same availability and
+    // post-load gating as RedoTrial: never armed while Paused; while Running,
+    // wait for the walker to clear the trigger radius before re-arming.
+    private void JumpBy(int delta)
+    {
+        if (!CanRedo)
+        {
+            Hud("Trial navigation is available once trials are running");
+            return;
+        }
+        if (trialSequencer == null || obstacleController == null) return;
+
+        int from = trialSequencer.CurrentTrialIndex;
+        int to = from + delta;
+        if (!trialSequencer.JumpToTrial(to))
+        {
+            Hud($"No trial {to} in the CSV");
+            return;
+        }
+
+        if (Phase == SessionPhase.Paused)
+        {
+            obstacleController.DisarmObstacle();
+            Hud($"Trial {to} loaded — still paused");
+        }
+        else if (!PlayerClearOfTrigger())
+        {
+            obstacleController.DisarmObstacle();
+            _waitingForRedoClearance = true;
+            Hud($"Trial {to} — waiting for walker to clear the obstacle");
+        }
+        else
+        {
+            Hud($"Trial {to} armed");
+        }
+
+        Log("trial_skip", $"from={from};to={to};phase={Phase}");
     }
 
     // ---- event handlers ----
@@ -285,9 +335,22 @@ public sealed class SessionFlowController : MonoBehaviour
             SessionLogger.Instance.Enqueue(LogEvent.SessionEvent(subtype, detail));
     }
 
-    private void Hud(string msg)
+    private void Hud(string msg, float seconds = 3f)
     {
         if (!_hudSearched) { _hud = HudSink.Find(); _hudSearched = true; }
-        _hud?.ShowTransient(msg, 3f);
+        _hud?.ShowTransient(msg, seconds);
+    }
+
+    private void PulseControllers()
+    {
+        OVRInput.SetControllerVibration(1f, 0.6f, OVRInput.Controller.LTouch);
+        OVRInput.SetControllerVibration(1f, 0.6f, OVRInput.Controller.RTouch);
+        Invoke(nameof(StopControllerVibration), 0.08f);
+    }
+
+    private void StopControllerVibration()
+    {
+        OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.LTouch);
+        OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.RTouch);
     }
 }

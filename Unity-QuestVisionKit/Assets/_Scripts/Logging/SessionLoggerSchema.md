@@ -163,11 +163,15 @@ Session-flow events (UX pass, all additive — still schema v1):
 | `phase_change` | every session-phase transition | `from=..;to=..;reason=..` (phases: Setup/Ready/Running/Paused/Complete; `reason=sequence_complete_ignored` marks a boot-time sequence-complete from a 1-based trial CSV) |
 | `config_change` | every condition change (preset cycle or individual setter) | `preset=<name|custom>;solver=..;policy=..;variant=..;placed=0|1;reason=boot\|preset:<name>\|set_policy\|set_solver\|set_variant` |
 | `trial_redo` | experimenter redid a fouled walk | `index=..;phase=Running\|Paused` |
+| `trial_skip` | experimenter manually jumped to the next/previous trial (chord or web console; 2026-07-14, additive) | `from=..;to=..;phase=Running\|Paused` |
 | `application_pause` / `application_resume` | headset doffed/donned (OS pause) | (empty) — pause also forces a writer flush |
 
 Walk-row semantics under redo: a redone trial produces a **repeated
 `walk_phase=start` row for the same `walk_index` with no intervening `end`** —
 that is the redo signature. `end` rows are only emitted for completed walks.
+A manual skip (`trial_skip`) likewise abandons the current walk — a `start`
+row for a **different** `walk_index` follows with no intervening `end`; use
+the `trial_skip` event's `from`/`to` to attribute it.
 
 `session_start.detail` gains `participant_source=file|inspector` (whether
 `participant.txt` on the device overrode the Inspector participant ID).

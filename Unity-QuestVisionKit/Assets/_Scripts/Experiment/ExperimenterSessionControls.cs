@@ -12,9 +12,13 @@ using UnityEngine;
 ///   HOLD R grip + L index trigger     Recapture (clear placement) [Ready]
 ///   HOLD both index triggers          Start trials                [Ready]
 ///   HOLD R index trigger              Redo current trial          [Running/Paused]
+///   HOLD R grip + R index trigger     Skip to next trial          [Running/Paused]
 ///   HOLD R grip + Start (menu)        Cycle condition preset      [Setup/Ready/Paused]
 ///   PRESS Start (menu)                Pause / Resume              [Running/Paused]
 ///   PRESS R thumbstick click          Toggle diagnostics zone     [any]
+///
+/// Previous-trial has no chord (rarely needed mid-walk; misfire risk next to
+/// Redo) — it lives on the web console (RemoteConsoleServer) only.
 ///
 /// Hold mechanics: index-trigger presses group for a short window (so pressing
 /// L then R lands on the both-index action instead of firing Place), then the
@@ -26,7 +30,7 @@ using UnityEngine;
 [DisallowMultipleComponent]
 public sealed class ExperimenterSessionControls : MonoBehaviour
 {
-    private enum HoldAction { None, Place, Recapture, StartTrials, Redo, CyclePreset }
+    private enum HoldAction { None, Place, Recapture, StartTrials, Redo, CyclePreset, NextTrial }
 
     [Header("Wiring (auto-resolved if empty)")]
     [SerializeField] private QuestControllerInput input;
@@ -126,7 +130,7 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
         if (l && r) TryBeginHold(HoldAction.StartTrials);
         else if (l && mod) TryBeginHold(HoldAction.Recapture);
         else if (l) TryBeginHold(HoldAction.Place);
-        else if (r && mod) { /* reserved */ }
+        else if (r && mod) TryBeginHold(HoldAction.NextTrial);
         else if (r) TryBeginHold(HoldAction.Redo);
         // Released within the grouping window: treat as an aborted tap, no action.
     }
@@ -211,6 +215,9 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
             case HoldAction.CyclePreset:
                 placement?.CyclePreset();
                 break;
+            case HoldAction.NextTrial:
+                flow?.NextTrial();
+                break;
         }
     }
 
@@ -225,6 +232,7 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
             HoldAction.Recapture => l && !r && mod,
             HoldAction.StartTrials => l && r,
             HoldAction.Redo => r && !l && !mod,
+            HoldAction.NextTrial => r && !l && mod,
             HoldAction.CyclePreset => input.IsHeld(menuButton) && mod,
             _ => false,
         };
@@ -257,6 +265,10 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
                 if (flow.CanRedo) return true;
                 denyHint = "Redo is available once trials are running";
                 return false;
+            case HoldAction.NextTrial:
+                if (flow.CanRedo) return true;    // same phase gate as Redo (Running/Paused)
+                denyHint = "Trial navigation is available once trials are running";
+                return false;
             case HoldAction.CyclePreset:
                 if (flow.CanChangeConfig) return true;
                 denyHint = "Pause first to change the condition";
@@ -273,6 +285,7 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
         HoldAction.StartTrials => "Start trials",
         HoldAction.Redo => "Redo trial",
         HoldAction.CyclePreset => "Change condition",
+        HoldAction.NextTrial => "Next trial",
         _ => "",
     };
 
