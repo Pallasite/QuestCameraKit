@@ -147,7 +147,9 @@ simple single/double-AprilTag placement flow. All work below is committed in
      fouled walk, no advance), `SetManualTarget()` hooks on ObstacleController
      and ObstacleFinesseController.
 3. **Two scenes** (both wired identically: `Root Obstacle.prefab`,
-   placementMode=Manual, policy=Deferred, solver=SingleTag id=-1, variant=Anchored):
+   placementMode=Manual, policy=Deferred, solver=SingleTag id=-1, variant=Anchored,
+   rotationSolver=KabschRescaledRadial — aligned 2026-07-29, see the
+   rotation-solver pass section below):
    - `Assets/_Scenes/Single Tag Obstacle - Lifted.unity` — clone of the
      constellation scene; `April Tags Logic and Managers` **enabled** (it was
      disabled — the root cause of zero tag detections in the field);
@@ -176,6 +178,46 @@ Logging: `state_snapshot` mode=observe (tag-proposed pose) vs mode=applied
 (actual locked pose); `correction_event` per Deferred apply;
 `session_event subtype=obstacle_placed` on placement.
 
+### Rotation-solver pass (UPDATE 2026-07-29)
+
+The stereo scanner's five pose-solver modes (`StereoAprilTagScanner.RotationSolver`:
+NaiveCross / Kabsch / KabschRescaledRadial / KabschTemplateFit / StereoPnP) got a
+correctness + tooling pass. Do not confuse this "rotation solver" with the
+placement `TagSolverMode` (SingleTag/TwoTagLine/Constellation) — the HUD/console
+label the new one **"Rot solver"** everywhere.
+
+- **Default aligned to `KabschRescaledRadial`** across the detection prefab and
+  both scenes (they had silently diverged: Lifted=NaiveCross, prefab=Kabsch,
+  Scratch=KabschRescaledRadial). Rationale: the placement flow flattens tag
+  rotation to yaw-only (`SingleTagSolver.FlattenToYaw`), and RescaledRadial's
+  rotation is mathematically identical to Kabsch — the radial rescale is a pure
+  POSITION correction that pins the stereo depth bias using the known tag size.
+  StereoPnP stays reachable at runtime as the theoretical-boundary probe.
+- **ONE tag-size knob.** `StereoAprilTagScanner.tagSizeMeters` on
+  `AprilTagDetection (SingleTag).prefab` is the single editor-set source of
+  truth (0.171 m, caliper-verified; testing other sizes = change it there).
+  The wireframe visualizer auto-syncs via its `sizeSource` GetComponent; the
+  mono `AprilTagScanner` on the same GameObject is disabled. Stale serialized
+  wireframe fallbacks (0.097) were cleaned to match.
+- **Bug fixes** (StereoAprilTagScanner): the comparison CSV's `residual_m` was
+  identically 0 and `size_m` exactly the configured size for KabschTemplateFit
+  and StereoPnP (residual computed after the corners were rebuilt from the
+  fitted pose); `solverUsed` claimed the Inspector mode even when size-aware
+  modes had degraded to Kabsch (tag size unset; calibration path). Both fixed;
+  `size_m` is now the raw pre-mutation triangulated edge length for all modes.
+- **Runtime cycling**: web-console action `cycleRotationSolver` (+ "Rot solver"
+  button and status row `rotSolver`/`tagSizeM`), HUD diagnostics line, and a
+  `config_change` session event (`rot_solver=..;tag_size_m=..;reason=boot|
+  set_rot_solver`) at boot and on each cycle as the analyst join key.
+- **`AprilTagSolverComparisonLogger` wired into the detection prefab** (it
+  previously existed in no scene), enabled by default — rows only while tags
+  are detected. Purpose is INTERNAL validation of the solver choice, not a
+  primary study measure. Schema + per-mode caveats: "AprilTag solver
+  comparison" section of `Assets/_Scripts/Logging/LogAnalysisHandoff.md`.
+- The Scratch scene's prefab override `rotationSolver=2` is now redundant with
+  the prefab default (value also 2) — left in place to avoid touching WIP; if
+  you later change the prefab default, remember Scratch pins its own value.
+
 ## Immediate next step
 
 **Device-test BOTH scenes** (QuestBuildWindow "Build + Deploy" or
@@ -184,6 +226,12 @@ Logging: `state_snapshot` mode=observe (tag-proposed pose) vs mode=applied
 - Scene B has **no occlusion** (`EnvironmentDepthManager` omitted — open
   question whether to add for parity).
 - The chord map (untested on hardware; bindings are serialized — retune freely).
+- Rotation-solver pass (2026-07-29, untested on hardware): cycle all 5 modes
+  from the web console; HUD diagnostics + "Rot solver" status row should track
+  each press; pulled `apriltag_solver_comparison.csv` should show all 5 solver
+  labels with nonzero `residual_m` for KabschTemplateFit/StereoPnP and `size_m`
+  no longer pinned to exactly 0.171; wide CSV should have `rot_solver`
+  config_change rows at boot + each cycle.
 Then: fixes land in the shared code so both scenes benefit; analyze pulled CSVs
 per `SingleTagObstacleHandoff.md`.
 

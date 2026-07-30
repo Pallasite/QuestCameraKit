@@ -17,6 +17,7 @@ GameObject:
   - component: {fileID: 6762133713987894630}
   - component: {fileID: 5124365008574743862}
   - component: {fileID: 2439007242928577210}
+  - component: {fileID: 8850943087354284025}
   m_Layer: 0
   m_Name: AprilTagDetection (SingleTag)
   m_TagString: Untagged
@@ -53,6 +54,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::AprilTagScanner
   sampleFactor: 2
   tagSizeMeters: 0.171
+  targetTagIds: 
 --- !u!114 &6584871663056619710
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -82,12 +84,16 @@ MonoBehaviour:
   placementMode: 0
   markerDisplayScale: 1
   markerPool: {fileID: 0}
+  markerDisplayMode: 0
+  placementGate: {fileID: 0}
   proximityGate: {fileID: 0}
   maxScanDistanceMeters: 2.5
   scanDistanceHysteresisMeters: 0.5
   gateBypassDuringStreaming: 1
   enableScanning: 1
   scanRateHz: 5
+  distanceGateToLastTag: 0
+  scanCutoffTagMultiples: 15
 --- !u!114 &31299415333935468
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -101,10 +107,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AprilTagWireframeVisualizer
   wireframeMaterial: {fileID: 2100000, guid: 007914e691e51ed41a4b0269a6ab175f, type: 2}
-  tagSizeMeters: 0.097
+  tagSizeMeters: 0.171
   sizeSource: {fileID: 0}
   corrector: {fileID: 0}
   displayMode: 1
+  placement: {fileID: 0}
   colorByQuality: 1
   streamingQualityGradient:
     serializedVersion: 2
@@ -232,10 +239,27 @@ MonoBehaviour:
   sampleFactor: 2
   decimation: 2
   minDecisionMargin: 30
+  targetTagIds: 
   maxFrameTimeDeltaMs: 30
   tagSizeMeters: 0.171
   calibrationSampleFactor: 2
   calibrationDecimation: 2
   calibrationFrameCount: 8
   acquireTimeoutSeconds: 2
-  rotationSolver: 1
+  rotationSolver: 2
+--- !u!114 &8850943087354284025
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2053625363347814627}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 53440ee8ecf60064a9fbbde3952a013d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AprilTagSolverComparisonLogger
+  displayManager: {fileID: 0}
+  fileName: apriltag_solver_comparison.csv
+  enableLogging: 1
+  flushEvery: 30

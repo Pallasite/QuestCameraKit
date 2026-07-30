@@ -4223,6 +4223,7 @@ GameObject:
   - component: {fileID: 665711661}
   - component: {fileID: 665711658}
   - component: {fileID: 665711660}
+  - component: {fileID: 665711662}
   m_Layer: 0
   m_Name: April Tags Logic and Managers
   m_TagString: Untagged
@@ -4342,7 +4343,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AprilTagWireframeVisualizer
   wireframeMaterial: {fileID: 2100000, guid: 007914e691e51ed41a4b0269a6ab175f, type: 2}
-  tagSizeMeters: 0.097
+  tagSizeMeters: 0.171
   sizeSource: {fileID: 0}
   corrector: {fileID: 0}
   displayMode: 4
@@ -4434,7 +4435,7 @@ MonoBehaviour:
   calibrationDecimation: 2
   calibrationFrameCount: 8
   acquireTimeoutSeconds: 2
-  rotationSolver: 0
+  rotationSolver: 2
 --- !u!114 &665711661
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -4452,6 +4453,22 @@ MonoBehaviour:
   _maxFramerate: 60
   TargetMaterial: {fileID: 0}
   _texturePropertyName: 
+--- !u!114 &665711662
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 665711650}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 53440ee8ecf60064a9fbbde3952a013d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AprilTagSolverComparisonLogger
+  displayManager: {fileID: 0}
+  fileName: apriltag_solver_comparison.csv
+  enableLogging: 1
+  flushEvery: 30
 --- !u!1 &667649647
 GameObject:
   m_ObjectHideFlags: 0
@@ -9660,6 +9677,7 @@ MonoBehaviour:
   hud: {fileID: 0}
   scanPolicy: {fileID: 0}
   tagManager: {fileID: 0}
+  stereoScanner: {fileID: 0}
 --- !u!114 &1624277469
 MonoBehaviour:
   m_ObjectHideFlags: 0
