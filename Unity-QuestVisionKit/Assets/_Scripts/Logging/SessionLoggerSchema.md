@@ -162,6 +162,7 @@ Session-flow events (UX pass, all additive — still schema v1):
 |---|---|---|
 | `phase_change` | every session-phase transition | `from=..;to=..;reason=..` (phases: Setup/Ready/Running/Paused/Complete; `reason=sequence_complete_ignored` marks a boot-time sequence-complete from a 1-based trial CSV) |
 | `config_change` | every condition change (preset cycle or individual setter) | `preset=<name|custom>;solver=..;policy=..;variant=..;placed=0|1;reason=boot\|preset:<name>\|set_policy\|set_solver\|set_variant` |
+| `config_change` (rotation-solver variant; 2026-07-29, additive) | AprilTag rotation-solver boot record + every web-console cycle | `rot_solver=<NaiveCross\|Kabsch\|KabschRescaledRadial\|KabschTemplateFit\|StereoPnP>;tag_size_m=<F3>;reason=boot\|set_rot_solver` — emitted by `AprilTagSolverComparisonLogger` (boot) and `RemoteConsoleServer` (cycle). This is the join key for `apriltag_solver_comparison.csv`; note `rot_solver` (scanner pose solver) is a different axis from `solver` (placement TagSolverMode) in the row above. |
 | `trial_redo` | experimenter redid a fouled walk | `index=..;phase=Running\|Paused` |
 | `trial_skip` | experimenter manually jumped to the next/previous trial (chord or web console; 2026-07-14, additive) | `from=..;to=..;phase=Running\|Paused` |
 | `application_pause` / `application_resume` | headset doffed/donned (OS pause) | (empty) — pause also forces a writer flush |
@@ -230,3 +231,11 @@ On the Quest, sessions land in `Application.persistentDataPath` which maps to
   walk `end` rows could carry the next trial's index and ~0 duration —
   end-row data before this pass should be treated with suspicion if the same
   `timestamp_session` shows `start(N+1)` before `end(N)`.
+- **v1 (additive, no bump — 2026-07-29)** — rotation-solver `config_change`
+  variant (`rot_solver=..;tag_size_m=..;reason=boot|set_rot_solver`) emitted
+  at boot and on web-console solver cycles, as the join key for
+  `apriltag_solver_comparison.csv`. That CSV's `residual_m`/`size_m` columns
+  are also fixed from this date (previously degenerate — always 0 / always the
+  configured size — for `KabschTemplateFit` and `StereoPnP` rows), and its
+  `solver` column now records the EFFECTIVE solver on size-unset fallbacks.
+  See the "AprilTag solver comparison" section of `LogAnalysisHandoff.md`.

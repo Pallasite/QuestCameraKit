@@ -66,7 +66,9 @@ adb forward tcp:8787 tcp:8787
 then open **http://localhost:8787/** in a browser. The page shows the live
 phase, **trial number**, condition, tag/occlusion/scan status, and has buttons
 for Start/Pause/Redo/**Prev-Next trial** and the diagnostic toggles
-(occlusion on/off, scan profile) used for on-device testing. It also works
+(occlusion on/off, scan profile, **Rot solver** — cycles the AprilTag pose
+solver for internal validation; the "Rot solver" status row shows the active
+mode and configured tag size) used for on-device testing. It also works
 over Wi-Fi via the headset's IP, port 8787.
 
 ## Ending

@@ -45,6 +45,7 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
     private TrialSequencer _sequencer;
     private TrialLoader _loader;
     private AprilTagWireframeVisualizer _wireframe;
+    private StereoAprilTagScanner _stereoScanner;
     private Canvas _canvas;
 
     private readonly StringBuilder _sb = new();
@@ -81,6 +82,7 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
         if (_sequencer == null) _sequencer = FindAnyObjectByType<TrialSequencer>();
         if (_loader == null) _loader = FindAnyObjectByType<TrialLoader>();
         if (_wireframe == null) _wireframe = FindAnyObjectByType<AprilTagWireframeVisualizer>();
+        if (_stereoScanner == null) _stereoScanner = FindAnyObjectByType<StereoAprilTagScanner>();
         _sourcesResolved = _flow != null && _placement != null;
     }
 
@@ -292,6 +294,13 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
             _sb.Append("  ·  anchor: ").Append(_placement.AnchorStatus);
             if (_placement.LastCorrectionMm >= 0f)
                 _sb.Append("  ·  last corr: ").Append(_placement.LastCorrectionMm.ToString("F1")).Append(" mm");
+        }
+        if (_stereoScanner != null)
+        {
+            // "rot solver", not "solver" — the status line's Solver is the
+            // placement TagSolverMode, a different axis.
+            _sb.Append("\nrot solver: ").Append(_stereoScanner.Solver)
+               .Append(" · tag ").Append(_stereoScanner.TagSizeMeters.ToString("F3")).Append(" m");
         }
         if (SessionLogger.Instance != null)
         {

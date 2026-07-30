@@ -6,17 +6,26 @@ using QuestBuild;
 using UnityEngine;
 
 /// <summary>
-/// Per-frame CSV logger for the AprilTag solver-comparison experiment. Subscribes
-/// to AprilTagDisplayManager.OnTagsDetected and writes one row per detected tag
-/// per frame, recording which RotationSolver produced the result, the world-space
-/// pose, the recovered tag size, and the corner residual (uniform accuracy proxy
-/// across all five solver modes).
+/// Per-frame CSV logger for the AprilTag solver comparison (internal validation,
+/// not a primary study measure). Subscribes to AprilTagDisplayManager.OnTagsDetected
+/// and writes one row per detected tag per frame:
+///   solver     — the RotationSolver that ACTUALLY produced the pose (size-aware
+///                modes degrade to Kabsch when the tag size is unset and are
+///                stamped as such).
+///   size_m     — raw stereo-triangulated mean edge length, captured before any
+///                solver rescales/rebuilds the corners. size_m − tagSizeMeters is
+///                the stereo scale-error diagnostic, valid for every mode.
+///   residual_m — RMS distance between the corners the solver consumed and the
+///                rigid template at the fitted pose. Comparable across modes with
+///                one caveat: KabschRescaledRadial's residual is post-rescale, so
+///                it excludes the scale error that mode removes by construction.
 ///
 /// Output goes to Application.persistentDataPath, which on Quest is the app's
-/// scoped storage and is reachable via adb pull. Rows are appended; toggling
-/// through the five solver modes (StereoAprilTagScanner.Solver) during a session
-/// produces a single contiguous file that can be split off-line by the `solver`
-/// column.
+/// scoped storage and is reachable via adb pull. Rows are appended; cycling
+/// through the five solver modes (web console: cycleRotationSolver) during a
+/// session produces a single contiguous file that can be split off-line by the
+/// `solver` column. A config_change session event is emitted at boot and on each
+/// cycle so the wide experiment CSV records which solver was active when.
 ///
 /// Header: timestamp_unix_ms,frame,tag_id,solver,pos_x,pos_y,pos_z,rot_x,rot_y,rot_z,rot_w,size_m,residual_m
 /// </summary>
@@ -43,6 +52,7 @@ public class AprilTagSolverComparisonLogger : MonoBehaviour
     private StreamWriter _writer;
     private int _rowsSinceFlush;
     private string _resolvedPath;
+    private StereoAprilTagScanner _stereoScanner;
 
     private const string Header =
         "timestamp_unix_ms,frame,tag_id,solver,pos_x,pos_y,pos_z,rot_x,rot_y,rot_z,rot_w,size_m,residual_m";
@@ -54,6 +64,19 @@ public class AprilTagSolverComparisonLogger : MonoBehaviour
     private void Awake()
     {
         if (!displayManager) displayManager = GetComponent<AprilTagDisplayManager>();
+        _stereoScanner = GetComponent<StereoAprilTagScanner>();
+    }
+
+    // In Start (not OnEnable) so SessionLogger.Instance — assigned in its Awake —
+    // is guaranteed to exist regardless of scene-load component ordering. A boot
+    // event means a session with no cycling is still provably on the default
+    // solver when the CSV is analyzed.
+    private void Start()
+    {
+        if (SessionLogger.Instance == null || _stereoScanner == null) return;
+        SessionLogger.Instance.Enqueue(LogEvent.SessionEvent(
+            "config_change",
+            $"rot_solver={_stereoScanner.Solver};tag_size_m={_stereoScanner.TagSizeMeters.ToString("F3", Inv)};reason=boot"));
     }
 
     private void OnEnable()

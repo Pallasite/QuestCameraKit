@@ -21,7 +21,7 @@ using UnityEngine;
 /// Endpoints:
 ///   GET  /            the dashboard page (self-contained HTML)
 ///   GET  /status      JSON snapshot (cached on the main thread — no cross-thread Unity calls)
-///   POST /action/{startTrials|pause|resume|redo|nextTrial|prevTrial|cyclePreset|recapture|place|toggleDiagnostics|toggleOcclusion|cycleScanProfile}
+///   POST /action/{startTrials|pause|resume|redo|nextTrial|prevTrial|cyclePreset|recapture|place|toggleDiagnostics|toggleOcclusion|cycleScanProfile|cycleRotationSolver}
 ///                     enqueued to the main thread; responds 202 immediately
 ///   POST /participant body = ID; written to participant.txt (applies NEXT launch —
 ///                     the current session's CSV is already open)
@@ -44,6 +44,11 @@ public sealed class RemoteConsoleServer : MonoBehaviour
     [SerializeField] private ScanProfilePolicy scanPolicy;
     [SerializeField] private AprilTagDisplayManager tagManager;
 
+    [Tooltip("Stereo scanner for the rotation-solver cycle action + rotSolver/tagSizeM " +
+             "status fields. Auto-resolved; the mono scanner has no solver concept, so " +
+             "these features simply hide when no stereo scanner exists in the scene.")]
+    [SerializeField] private StereoAprilTagScanner stereoScanner;
+
     private HttpListener _listener;
     private Thread _thread;
     private volatile bool _running;
@@ -61,6 +66,7 @@ public sealed class RemoteConsoleServer : MonoBehaviour
         if (!hud) hud = FindAnyObjectByType<SessionHUD>();
         if (!scanPolicy) scanPolicy = FindAnyObjectByType<ScanProfilePolicy>();
         if (!tagManager) tagManager = FindAnyObjectByType<AprilTagDisplayManager>();
+        if (!stereoScanner) stereoScanner = FindAnyObjectByType<StereoAprilTagScanner>();
     }
 
     private void OnEnable()
@@ -209,6 +215,20 @@ public sealed class RemoteConsoleServer : MonoBehaviour
                     hud?.ShowTransient($"Scan profile: {scanPolicy.ModeLabel}", 3f);
                 });
                 return true;
+            case "cycleRotationSolver":
+                _mainThread.Enqueue(() =>
+                {
+                    if (stereoScanner == null) return;
+                    var next = stereoScanner.CycleSolver();
+                    hud?.ShowTransient($"Rot solver: {next}", 3f);
+                    // Join key for analysts: the wide session CSV records when the
+                    // rotation solver changed, so apriltag_solver_comparison.csv
+                    // rows can be attributed even without their own timestamps.
+                    SessionLogger.Instance?.Enqueue(LogEvent.SessionEvent(
+                        "config_change",
+                        $"rot_solver={next};tag_size_m={stereoScanner.TagSizeMeters.ToString("F3", CultureInfo.InvariantCulture)};reason=set_rot_solver"));
+                });
+                return true;
             default: return false;
         }
     }
@@ -273,6 +293,13 @@ public sealed class RemoteConsoleServer : MonoBehaviour
             sb.Append("\"scanGated\":").Append(tagManager.ScanGatedByDistance ? "true" : "false").Append(',');
             sb.Append("\"scanCutoffM\":").Append(tagManager.ScanCutoffMeters.ToString("F2", CultureInfo.InvariantCulture)).Append(',');
         }
+        if (stereoScanner != null)
+        {
+            // "rotSolver", never "solver" — that key is already the placement
+            // TagSolverMode (SingleTag/TwoTagLine/...), a different axis.
+            sb.Append("\"rotSolver\":\"").Append(stereoScanner.Solver).Append("\",");
+            sb.Append("\"tagSizeM\":").Append(stereoScanner.TagSizeMeters.ToString("F3", CultureInfo.InvariantCulture)).Append(',');
+        }
         sb.Append("\"occlusion\":\"").Append(_occlusionForcedOff ? "forced-off" : "auto").Append("\",");
         bool anyOccluding = false;
         foreach (var swapper in OcclusionSwapper.AllInstances)
@@ -325,6 +352,7 @@ public sealed class RemoteConsoleServer : MonoBehaviour
  <button onclick=""act('toggleDiagnostics')"">Diagnostics</button>
  <button onclick=""act('toggleOcclusion')"">Occlusion</button>
  <button onclick=""act('cycleScanProfile')"">Scan profile</button>
+ <button onclick=""act('cycleRotationSolver')"">Rot solver</button>
 </div>
 <div style='margin-top:1rem'>
  <input id='pid' placeholder='participant ID (next launch)'>
@@ -345,6 +373,7 @@ async function poll(){
    ['Tag seen',s.tagAgeS<0?'never':s.tagAgeS+'s ago'],['Last corr',s.lastCorrectionMm+' mm'],
    ['Occlusion',s.occlusion+(s.occluding?' (occluding)':'')],
    ['Scan',s.scanProfile+' @'+s.scanRateHz+'Hz'+(s.scanGated?' (idle >'+s.scanCutoffM+'m)':'')],
+   ['Rot solver',s.rotSolver?s.rotSolver+' · tag '+s.tagSizeM+' m':'—'],
    ['Log rows',s.logRows],['Participant',s.participant]];
   document.getElementById('grid').innerHTML=rows.map(r=>'<div><b>'+r[0]+'</b></div><div>'+r[1]+'</div>').join('');
   err('');
