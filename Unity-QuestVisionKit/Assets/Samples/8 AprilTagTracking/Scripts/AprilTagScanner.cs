@@ -31,14 +31,23 @@ public class AprilTagResult
 
     // Diagnostics for the solver-comparison experiment. Populated by stereo
     // scanners; the monocular path leaves them at default (NaiveCross / 0).
-    // solverUsed records which RotationSolver mode produced this result.
-    // cornerResidualMeters is the RMS distance between observedCorners and
-    // the rigid template (size = tagSize) at the fitted pose — a uniform
-    // accuracy proxy across all five solver modes (the StereoPnP cost is
-    // reported in pixels internally, so this corner-space residual keeps
-    // the metric comparable to the closed-form solvers).
+    // solverUsed records which RotationSolver mode ACTUALLY produced this
+    // result — when tagSizeMeters is unset the size-aware modes degrade to
+    // plain Kabsch and are stamped as such.
+    // cornerResidualMeters is the RMS distance between the corners the solver
+    // consumed and the rigid template (size = tagSize) at the fitted pose —
+    // comparable across all five solver modes (the StereoPnP cost is reported
+    // in pixels internally, so this corner-space residual keeps the metric
+    // comparable to the closed-form solvers). Caveat: KabschRescaledRadial's
+    // residual is post-rescale, i.e. it excludes the scale error that mode
+    // removes by construction.
+    // measuredTagSizeMeters is the mean edge length of the RAW triangulated
+    // corners, captured before any solver rescales or rebuilds them — the
+    // stereo scale-error diagnostic (0 on the monocular path and for
+    // calibration results, whose corners are post-mutation geometry).
     public StereoAprilTagScanner.RotationSolver solverUsed;
     public float cornerResidualMeters;
+    public float measuredTagSizeMeters;
 }
 
 /// <summary>

@@ -26,9 +26,10 @@ public class AprilTagDisplayManager : MonoBehaviour
 
     /// <summary>
     /// Holds a detected tag's world-space pose after camera transform.
-    /// SizeMeters is the measured edge length when the scanner triangulated
-    /// world corners (stereo); 0 when only an inspector-set size is available
-    /// (monocular).
+    /// SizeMeters is the RAW stereo-triangulated mean edge length (captured
+    /// before any solver rescales or rebuilds the corners — the stereo
+    /// scale-error diagnostic); 0 when only an inspector-set size is
+    /// available (monocular).
     /// </summary>
     public struct TagWorldPose
     {
@@ -38,10 +39,13 @@ public class AprilTagDisplayManager : MonoBehaviour
         public float SizeMeters;
 
         // Diagnostics for the solver-comparison experiment. SolverUsed records
-        // which RotationSolver mode produced this pose; CornerResidualMeters is
-        // the RMS distance between the observed corners and the rigid template
-        // at the fitted pose. Both default to (NaiveCross, 0) for monocular
-        // scanners that don't populate the AprilTagResult diagnostics.
+        // which RotationSolver mode ACTUALLY produced this pose (size-aware
+        // modes degrade to Kabsch when the tag size is unset and are stamped
+        // as such); CornerResidualMeters is the RMS distance between the
+        // corners the solver consumed and the rigid template at the fitted
+        // pose (post-rescale for KabschRescaledRadial). Both default to
+        // (NaiveCross, 0) for monocular scanners that don't populate the
+        // AprilTagResult diagnostics.
         public StereoAprilTagScanner.RotationSolver SolverUsed;
         public float CornerResidualMeters;
     }
@@ -351,7 +355,12 @@ public class AprilTagDisplayManager : MonoBehaviour
                 TagId = result.tagId,
                 Position = worldPos,
                 Rotation = worldRot,
-                SizeMeters = MeasureTagSize(result.observedCorners),
+                // Prefer the scanner's raw pre-mutation measurement: after the
+                // rebuild/rescale modes run, observedCorners equal the rigid
+                // template and measuring them just returns the configured size.
+                SizeMeters = result.measuredTagSizeMeters > 0f
+                    ? result.measuredTagSizeMeters
+                    : MeasureTagSize(result.observedCorners),
                 SolverUsed = result.solverUsed,
                 CornerResidualMeters = result.cornerResidualMeters,
             });

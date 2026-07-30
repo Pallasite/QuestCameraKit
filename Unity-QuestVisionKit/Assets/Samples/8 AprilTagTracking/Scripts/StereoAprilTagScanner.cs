@@ -99,6 +99,17 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     }
 
     /// <summary>
+    /// Advances to the next RotationSolver mode, wrapping after StereoPnP,
+    /// and returns the new mode. Used by the web console's cycleRotationSolver
+    /// action for on-device solver comparison.
+    /// </summary>
+    public RotationSolver CycleSolver()
+    {
+        rotationSolver = (RotationSolver)(((int)rotationSolver + 1) % 5);
+        return rotationSolver;
+    }
+
+    /// <summary>
     /// Runtime accessor for the physical tag edge length in meters. Used by
     /// the size-aware solvers (KabschRescaledRadial, KabschTemplateFit, StereoPnP).
     /// </summary>
@@ -178,9 +189,13 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     // Per-detection scratch buffers reused across the dispatch in ResolvePose.
     // Pixel arrays hold the 4 corner observations from each eye (StereoPnP needs
     // them; the corner-only modes ignore them). worldCorners is the triangulated
-    // 3D corner buffer that downstream solvers operate on.
+    // 3D corner buffer that downstream solvers operate on. _residualCorners
+    // snapshots the corners the solver consumed before RebuildCornersFromPose
+    // overwrites them, so the residual measures fit quality rather than
+    // template-vs-itself (which is identically zero).
     private readonly Vector2[] _leftPixels = new Vector2[4];
     private readonly Vector2[] _rightPixels = new Vector2[4];
+    private readonly Vector3[] _residualCorners = new Vector3[4];
 
     // Jacobi 4x4 eigendecomposition workspace for KabschTemplateFit.
     private readonly float[,] _jacobiN = new float[4, 4];
@@ -368,8 +383,11 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
                     intrinsics = leftCamera.Intrinsics,
                     captureResolution = leftCamera.CurrentResolution,
                     observedCorners = medianCorners,
-                    solverUsed = rotationSolver,
+                    solverUsed = CalibrationEffectiveSolver(),
                     cornerResidualMeters = residual,
+                    // measuredTagSizeMeters left 0: median corners are post-mutation
+                    // geometry (rescaled/rebuilt per frame), so a size measured here
+                    // would not be the raw triangulated scale.
                 });
             }
             return results.ToArray();
@@ -475,7 +493,13 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
                 worldCorners[i] = TriangulateRays(left.Pose.position, lDir, right.Pose.position, rDir);
             }
 
-            var (pos, rot, residual) = ResolvePose(
+            // Raw stereo-triangulated mean edge length, captured BEFORE ResolvePose
+            // can rescale (KabschRescaledRadial) or rebuild (KabschTemplateFit,
+            // StereoPnP) the corners — after those mutations the measured size
+            // equals tagSizeMeters by construction and carries no information.
+            float rawMeasuredSize = MeanEdgeLength(worldCorners);
+
+            var (pos, rot, residual, effectiveSolver) = ResolvePose(
                 worldCorners,
                 _leftPixels, _rightPixels,
                 leftIntr, rightIntr,
@@ -490,8 +514,9 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
                 intrinsics = left.Intrinsics,
                 captureResolution = left.Resolution,
                 observedCorners = worldCorners,
-                solverUsed = rotationSolver,
+                solverUsed = effectiveSolver,
                 cornerResidualMeters = residual,
+                measuredTagSizeMeters = rawMeasuredSize,
                 // localPosition / localRotation left default — display manager uses
                 // worldPoseOverride and ignores these when the override is set.
             });
@@ -507,8 +532,19 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     /// rebuild it as the rigid template at the fitted pose so observedCorners
     /// reflects the optimized geometry for the wireframe visualizer and for
     /// calibration's component-wise median across frames).
+    ///
+    /// The residual is computed against the corners the solver CONSUMED — for
+    /// the rebuild modes those are snapshotted into _residualCorners before
+    /// RebuildCornersFromPose overwrites them (previously the residual compared
+    /// the rebuilt template against itself, which is identically zero). For
+    /// KabschRescaledRadial the consumed corners are post-rescale, so its
+    /// residual deliberately excludes the scale error that mode removes.
+    ///
+    /// effectiveSolver reports the solver that actually ran: when
+    /// tagSizeMeters <= 0 the size-aware modes degrade to plain Kabsch
+    /// internally, and the result is stamped accordingly.
     /// </summary>
-    private (Vector3 pos, Quaternion rot, float cornerResidualMeters) ResolvePose(
+    private (Vector3 pos, Quaternion rot, float cornerResidualMeters, RotationSolver effectiveSolver) ResolvePose(
         Vector3[] worldCorners,
         Vector2[] leftPixels, Vector2[] rightPixels,
         ScaledIntrinsics leftIntr, ScaledIntrinsics rightIntr,
@@ -517,6 +553,8 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     {
         Vector3 pos;
         Quaternion rot;
+        var effective = rotationSolver;
+        var residualSource = worldCorners;
         switch (rotationSolver)
         {
             case RotationSolver.NaiveCross:
@@ -528,16 +566,24 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
                 {
                     RescaleCornersRadially(worldCorners, cameraMidpoint, tagSizeMeters);
                 }
+                else
+                {
+                    effective = RotationSolver.Kabsch;
+                }
                 (pos, rot) = PoseFromCornersKabsch(worldCorners);
                 break;
 
             case RotationSolver.KabschTemplateFit:
+                if (tagSizeMeters <= 0f) effective = RotationSolver.Kabsch;
                 (pos, rot) = PoseFromCornersTemplateFit(worldCorners, tagSizeMeters);
+                Array.Copy(worldCorners, _residualCorners, 4);
+                residualSource = _residualCorners;
                 RebuildCornersFromPose(worldCorners, pos, rot, tagSizeMeters);
                 break;
 
             case RotationSolver.StereoPnP:
                 {
+                    if (tagSizeMeters <= 0f) effective = RotationSolver.Kabsch;
                     var (initPos, initRot) = PoseFromCornersKabsch(worldCorners);
                     (pos, rot) = StereoPnPRefine(
                         initPos, initRot,
@@ -545,6 +591,8 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
                         leftIntr, rightIntr,
                         leftCam, rightCam,
                         tagSizeMeters);
+                    Array.Copy(worldCorners, _residualCorners, 4);
+                    residualSource = _residualCorners;
                     RebuildCornersFromPose(worldCorners, pos, rot, tagSizeMeters);
                 }
                 break;
@@ -556,17 +604,20 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
         }
 
         float residual = (tagSizeMeters > 0f)
-            ? RigidTemplateResidualRms(worldCorners, pos, rot, tagSizeMeters)
+            ? RigidTemplateResidualRms(residualSource, pos, rot, tagSizeMeters)
             : 0f;
 
-        return (pos, rot, residual);
+        return (pos, rot, residual, effective);
     }
 
     /// <summary>
-    /// RMS distance between observed corners and the rigid template (size =
-    /// tagSize) placed at the fitted pose. Uniform accuracy proxy across all
-    /// five solver modes — for StereoPnP this is comparable to the Kabsch
-    /// modes' residual even though LM internally minimizes pixel error.
+    /// RMS distance between the corners the solver consumed and the rigid
+    /// template (size = tagSize) placed at the fitted pose. Comparable across
+    /// all five solver modes — for StereoPnP this measures 3D corner misfit
+    /// even though LM internally minimizes pixel error — with one caveat:
+    /// KabschRescaledRadial's consumed corners are post-rescale, so its
+    /// residual excludes the scale error that mode removes by construction
+    /// (compare its POSITION against other modes, not this residual alone).
     /// </summary>
     private static float RigidTemplateResidualRms(Vector3[] corners, Vector3 pos, Quaternion rot, float tagSize)
     {
@@ -658,6 +709,11 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     /// has no surviving per-frame camera midpoint here, so it falls through
     /// to plain Kabsch — the per-frame corners are already radially rescaled
     /// at capture time, so the median is already in size-corrected geometry.
+    /// Likewise StereoPnP's per-frame corners are the rigid template rebuilt
+    /// at each frame's PnP pose, so the Kabsch fit here is an aggregation of
+    /// per-frame PnP results. The calibration result's solverUsed therefore
+    /// reports the PIPELINE that produced the per-frame geometry (see
+    /// CalibrationEffectiveSolver), not this final aggregation fit.
     /// </summary>
     private (Vector3 pos, Quaternion rot) PoseFromCorners(Vector3[] c)
     {
@@ -669,6 +725,24 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
         };
     }
 
+    /// <summary>
+    /// Effective solver label for calibration results: the configured pipeline
+    /// when tagSizeMeters is valid, otherwise the mode the size-aware pipelines
+    /// actually degrade to (plain Kabsch; NaiveCross is size-free and unaffected).
+    /// </summary>
+    private RotationSolver CalibrationEffectiveSolver()
+    {
+        if (tagSizeMeters > 0f) return rotationSolver;
+        return rotationSolver == RotationSolver.NaiveCross
+            ? RotationSolver.NaiveCross
+            : RotationSolver.Kabsch;
+    }
+
+    /// <summary>Mean of the 4 edge lengths of a corner quad.</summary>
+    private static float MeanEdgeLength(Vector3[] c)
+        => (Vector3.Distance(c[0], c[1]) + Vector3.Distance(c[1], c[2]) +
+            Vector3.Distance(c[2], c[3]) + Vector3.Distance(c[3], c[0])) * 0.25f;
+
     // Stereo triangulation error is approximately a radial scaling about the camera
     // midpoint: depth uncertainty along the gaze axis is the dominant noise term, and
     // the world-space lateral spread of the corners scales with that depth (since
@@ -677,8 +751,7 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     // lateral spread in a single pass. Mutates corners in place.
     private static void RescaleCornersRadially(Vector3[] c, Vector3 cameraMidpoint, float tagSize)
     {
-        float meanEdge = (Vector3.Distance(c[0], c[1]) + Vector3.Distance(c[1], c[2]) +
-                          Vector3.Distance(c[2], c[3]) + Vector3.Distance(c[3], c[0])) * 0.25f;
+        float meanEdge = MeanEdgeLength(c);
         if (meanEdge < 1e-6f) return;
         float scale = tagSize / meanEdge;
         for (int i = 0; i < 4; i++)

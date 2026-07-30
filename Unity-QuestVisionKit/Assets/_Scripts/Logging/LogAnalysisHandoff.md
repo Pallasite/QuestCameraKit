@@ -118,7 +118,7 @@ Each app launch produces a per-session bundle on the Quest device:
   session.log                          ← Unity Console capture (dev)
   session.json                         ← dev sidecar with build identity + counters
   <participantId>_<unixMs>.csv         ← experiment CSV (this document's main subject)
-  apriltag_solver_comparison.csv       ← optional sample CSV (when its component is enabled)
+  apriltag_solver_comparison.csv       ← per-detection solver diagnostic (on by default in the single-tag scenes)
 ```
 
 where `<package>` is the Unity build's bundle ID (e.g.
@@ -159,7 +159,7 @@ Each `<sessionId>/` is one app launch's bundle of outputs:
 | `headset_pose_stats.csv` | 1 Hz rolling-window RMS jitter (translation mm, rotation deg) computed on device. | **Dev builds only** | "High-frequency pose + jitter stats" section below. |
 | `controller_poses.csv` | Per-frame L+R controller poses + validity. | **Dev builds only** | "High-frequency pose + jitter stats" section below. |
 | `controller_pose_stats.csv` | 1 Hz rolling-window RMS jitter per controller. | **Dev builds only** | "High-frequency pose + jitter stats" section below. |
-| `apriltag_solver_comparison.csv` | Per-frame AprilTag solver comparison rows. | Only when the sample is enabled this run | Header in the file itself. |
+| `apriltag_solver_comparison.csv` | Per-detection AprilTag rotation-solver diagnostic rows (internal validation, not a primary measure). | Single-tag scenes, on by default (rows only while tags are detected) | "AprilTag solver comparison" section below. |
 
 The experiment CSV is what the rest of this document describes in detail; the
 dev `session.*` files are mostly for diagnosing crashes and tying CSV anomalies
@@ -922,6 +922,58 @@ four high-freq pose / stats files) are **absent** from `Sessions/<sessionId>/`
 in non-development builds — their loggers self-gate on `Debug.isDebugBuild`.
 Their presence is the indicator of whether high-freq capture was on for that
 session.
+
+---
+
+## AprilTag solver comparison (`apriltag_solver_comparison.csv`)
+
+**Why it's there.** The stereo scanner has five pose-from-corners solver modes
+(an accuracy/cost ladder). This file exists for **internal validation** — pick
+the best mode from logged evidence — not as a primary study measure. It is on
+by default in the single-tag scenes and appends rows only while tags are
+detected, so trial-phase files stay small.
+
+Written by `Assets/Samples/8 AprilTagTracking/Scripts/AprilTagSolverComparisonLogger.cs`.
+
+**Schema.** `timestamp_unix_ms, frame, tag_id, solver, pos_x, pos_y, pos_z,
+rot_x, rot_y, rot_z, rot_w, size_m, residual_m`. One row per detected tag per
+scan (scan rate follows the active scan profile — typically 20 Hz during
+placement, 8 Hz during trials).
+
+Column semantics (per-mode caveats matter here):
+
+| Column | Meaning |
+|---|---|
+| `solver` | The `RotationSolver` that **actually** produced the pose: `NaiveCross`, `Kabsch`, `KabschRescaledRadial`, `KabschTemplateFit`, or `StereoPnP`. When the configured tag size is unset (`<= 0`), the size-aware modes degrade to plain `Kabsch` and are stamped as such — the label is the effective solver, not the Inspector setting. |
+| `size_m` | Mean edge length of the **raw stereo-triangulated** corners, captured before any solver rescales or rebuilds them. `size_m - <physical tag size>` is the stereo scale-error diagnostic and is valid for every mode. 0 for monocular scanners. |
+| `residual_m` | RMS distance between the corners the solver consumed and the rigid template at the fitted pose. Comparable across modes with one caveat: `KabschRescaledRadial`'s consumed corners are post-rescale, so its residual **excludes** the scale error that mode removes by construction — compare its position error against other modes, not this residual alone. |
+
+History note: before 2026-07-29, `residual_m` was identically 0 and `size_m`
+exactly equaled the configured tag size for `KabschTemplateFit` and `StereoPnP`
+rows (the residual was computed after the corners had been rebuilt from the
+fitted pose). Treat those columns in older files as uninformative for the two
+rebuild modes.
+
+**Join key.** The wide experiment CSV records which solver was active when: a
+`session_event` / `config_change` row with
+`detail = "rot_solver=<mode>;tag_size_m=<F3>;reason=boot"` is emitted at
+launch, and another with `reason=set_rot_solver` on every web-console cycle.
+Split this file by wall clock against those rows (both files carry unix ms).
+
+**Typical analysis** (per-solver accuracy summary):
+
+```python
+import pandas as pd
+
+TAG_SIZE = 0.171  # physical black-border edge, meters — confirm per session
+df = pd.read_csv("apriltag_solver_comparison.csv")
+df["scale_err_mm"] = (df["size_m"] - TAG_SIZE) * 1000
+print(df.groupby("solver")[["residual_m", "scale_err_mm"]].describe())
+```
+
+Low `residual_m` spread = consistent corner fit; `scale_err_mm` centered off
+zero = systematic stereo depth bias (exactly what `KabschRescaledRadial`
+corrects in its position output).
 
 ---
 
