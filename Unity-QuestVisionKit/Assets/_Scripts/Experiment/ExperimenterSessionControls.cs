@@ -1,3 +1,4 @@
+using System.Globalization;
 using UnityEngine;
 
 /// <summary>
@@ -16,6 +17,13 @@ using UnityEngine;
 ///   HOLD R grip + Start (menu)        Cycle condition preset      [Setup/Ready/Paused]
 ///   PRESS Start (menu)                Pause / Resume              [Running/Paused]
 ///   PRESS R thumbstick click          Toggle diagnostics zone     [any]
+///   PRESS R grip + Y (left)           Cycle AprilTag rot solver   [any]
+///
+/// The rot-solver cycle is a read-side diagnostic (mirrors the web console's
+/// cycleRotationSolver action — built for labs where the console is
+/// unreachable). Confirmation is the haptic double-pulse: during Running the
+/// HUD canvas is hidden unless diagnostics are on, so the transient may not
+/// be visible.
 ///
 /// Previous-trial has no chord (rarely needed mid-walk; misfire risk next to
 /// Redo) — it lives on the web console (RemoteConsoleServer) only.
@@ -37,6 +45,7 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
     [SerializeField] private SessionFlowController flow;
     [SerializeField] private ObstaclePlacementController placement;
     [SerializeField] private SessionHUD hud;
+    [SerializeField] private StereoAprilTagScanner stereoScanner;
 
     [Header("Bindings")]
     [SerializeField] private OVRInput.Button modifier = OVRInput.Button.SecondaryHandTrigger;   // R grip
@@ -44,6 +53,11 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
     [SerializeField] private OVRInput.Button rightIndex = OVRInput.Button.SecondaryIndexTrigger;
     [SerializeField] private OVRInput.Button menuButton = OVRInput.Button.Start;
     [SerializeField] private OVRInput.Button diagnosticsButton = OVRInput.Button.SecondaryThumbstick;
+
+    [Tooltip("R grip + this cycles the AprilTag rotation solver. Y (Button.Four, left controller) " +
+             "is bound to nothing else project-wide, so the chord can't collide — even if a " +
+             "ConstellationDriftCorrector (which claims R-grip+A/B) returns to the scene.")]
+    [SerializeField] private OVRInput.Button cycleSolverButton = OVRInput.Button.Four;
 
     [Header("Hold tuning")]
     [Tooltip("Seconds a hold must be sustained to commit.")]
@@ -68,6 +82,7 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
         if (!flow) flow = FindAnyObjectByType<SessionFlowController>();
         if (!placement) placement = FindAnyObjectByType<ObstaclePlacementController>();
         if (!hud) hud = FindAnyObjectByType<SessionHUD>();
+        if (!stereoScanner) stereoScanner = FindAnyObjectByType<StereoAprilTagScanner>();
     }
 
     private void Update()
@@ -81,6 +96,14 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
         {
             hud?.ToggleDiagnostics();
             Pulse(0.4f, 0.04f);
+        }
+
+        // R grip + Y: cycle the AprilTag rotation solver. Ungated by phase —
+        // it's a read-side diagnostic (matches the web console action) and the
+        // lab network can make the console unreachable.
+        if (input.WasPressedThisFrame(cycleSolverButton) && mod)
+        {
+            CycleRotationSolver();
         }
 
         if (input.WasPressedThisFrame(menuButton))
@@ -288,6 +311,24 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
         HoldAction.NextTrial => "Next trial",
         _ => "",
     };
+
+    // Mirrors RemoteConsoleServer's cycleRotationSolver action: cycle, HUD
+    // transient, haptic confirm, and the config_change join-key event so
+    // analysts can attribute apriltag_solver_comparison.csv rows.
+    private void CycleRotationSolver()
+    {
+        if (stereoScanner == null)
+        {
+            Hint("Stereo scanner missing from scene");
+            return;
+        }
+        var next = stereoScanner.CycleSolver();
+        hud?.ShowTransient($"Rot solver: {next}", 3f);
+        DoublePulse();
+        SessionLogger.Instance?.Enqueue(LogEvent.SessionEvent(
+            "config_change",
+            $"rot_solver={next};tag_size_m={stereoScanner.TagSizeMeters.ToString("F3", CultureInfo.InvariantCulture)};reason=set_rot_solver"));
+    }
 
     private void Hint(string msg)
     {

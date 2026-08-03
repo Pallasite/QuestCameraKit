@@ -52,6 +52,11 @@ you: a floating panel always says what to do next.
 - **Break needed?** → **PRESS the menu button (Start)** to pause. Press again
   to resume. While paused you can also redo, or change the experimental
   condition (**HOLD R-grip + Start**).
+- **Compare pose solvers?** (diagnostic, not part of the protocol) → **PRESS
+  R-grip + Y** cycles the AprilTag rotation solver. The controllers
+  double-buzz; the panel shows "Rot solver: …" whenever it's visible (during
+  walks the panel is hidden unless diagnostics are on — the buzz is your
+  confirmation). Works without the laptop/web console.
 - Every action buzzes the controllers so you know it registered.
 
 ## Watching from the laptop (web console)
