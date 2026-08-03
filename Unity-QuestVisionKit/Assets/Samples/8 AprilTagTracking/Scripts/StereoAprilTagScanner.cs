@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Meta.XR;
+using Unity.Collections;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -182,6 +183,20 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     private int _detectorDecimation = -1;
     private bool _isScanning;
 
+    // Persistent readback buffers. AsyncGPUReadback writes into the
+    // NativeArrays; the main-thread callback memcpys them into the reusable
+    // managed caches, which are what the Task.Run detection worker reads —
+    // a worker thread must not touch a NativeArray (development-build safety
+    // handles reject non-job-thread access). Reallocated only when the capture
+    // resolution changes; replaces the previous multi-MB ToArray() per scan
+    // (~20-26 MB/s of GC churn at 8 Hz). _detectTask is the in-flight
+    // detection job; OnDestroy waits on it before disposing the detectors.
+    private NativeArray<Color32> _leftReadback;
+    private NativeArray<Color32> _rightReadback;
+    private Color32[] _leftPixelCache;
+    private Color32[] _rightPixelCache;
+    private Task _detectTask;
+
     // Pre-allocated collections to avoid per-frame GC pressure.
     private readonly Dictionary<int, RawTagDetection> _rightById = new();
     private readonly List<AprilTagResult> _triangulateResults = new();
@@ -260,10 +275,23 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
 
     private void OnDestroy()
     {
+        // A detection task may still be inside the native detector — wait
+        // (bounded) before disposing, or the P/Invoke would read freed memory.
+        // Task exceptions surface at the await site, not here.
+        try { _detectTask?.Wait(TimeSpan.FromSeconds(2)); }
+        catch { }
+
+        // A pending RequestIntoNativeArray locks its target array; flush the
+        // callbacks before disposing the buffers below.
+        AsyncGPUReadback.WaitAllRequests();
+
         _leftDetector?.Dispose();
         _leftDetector = null;
         _rightDetector?.Dispose();
         _rightDetector = null;
+
+        if (_leftReadback.IsCreated) _leftReadback.Dispose();
+        if (_rightReadback.IsCreated) _rightReadback.Dispose();
 
         if (_leftDownsampled)
         {
@@ -408,8 +436,8 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
         DispatchDownsample(left.Texture, _leftDownsampled, targetW, targetH);
         DispatchDownsample(right.Texture, _rightDownsampled, targetW, targetH);
 
-        var leftPixelsTask = ReadPixelsAsync(_leftDownsampled);
-        var rightPixelsTask = ReadPixelsAsync(_rightDownsampled);
+        var leftPixelsTask = ReadPixelsIntoCacheAsync(_leftDownsampled, leftEye: true);
+        var rightPixelsTask = ReadPixelsIntoCacheAsync(_rightDownsampled, leftEye: false);
         await Task.WhenAll(leftPixelsTask, rightPixelsTask);
 
         var leftPixels = leftPixelsTask.Result;
@@ -419,8 +447,29 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
             return Array.Empty<AprilTagResult>();
         }
 
-        _leftDetector.ProcessImage(new ReadOnlySpan<Color32>(leftPixels));
-        _rightDetector.ProcessImage(new ReadOnlySpan<Color32>(rightPixels));
+        // Detection (grayscale conversion + native apriltag detect, BOTH eyes)
+        // runs on a thread-pool worker so the main thread never stalls — the
+        // synchronous version was the 90->60-70 fps dip near the obstacle.
+        // Sequential per eye on purpose: parallel eyes would run two native
+        // worker pools at once and re-create the core oversubscription the
+        // RawTagDetector ThreadCount clamp removes. Detector refs are captured
+        // as locals; OnDestroy Waits on _detectTask before disposing them, so
+        // the worker can never see a freed detector.
+        var ld = _leftDetector;
+        var rd = _rightDetector;
+        if (ld == null || rd == null) return Array.Empty<AprilTagResult>();
+        _detectTask = Task.Run(() =>
+        {
+            ld.ProcessImage(new ReadOnlySpan<Color32>(leftPixels));
+            rd.ProcessImage(new ReadOnlySpan<Color32>(rightPixels));
+        });
+        await _detectTask;
+
+        // Scene teardown may have run while detection was off-thread.
+        if (_leftDetector == null || _rightDetector == null)
+        {
+            return Array.Empty<AprilTagResult>();
+        }
 
         return Triangulate(left, right, targetW, targetH, applyTagFilter);
     }
@@ -1374,6 +1423,21 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
             _detectorDecimation = decimationToUse;
         }
 
+        // Readback buffers track the same resolution. Safe to dispose here:
+        // the _isScanning single-flight guard means no readback is pending
+        // when EnsureResources runs (the previous scan awaited its readbacks
+        // before returning).
+        int pixelCount = width * height;
+        if (!_leftReadback.IsCreated || _leftReadback.Length != pixelCount)
+        {
+            if (_leftReadback.IsCreated) _leftReadback.Dispose();
+            if (_rightReadback.IsCreated) _rightReadback.Dispose();
+            _leftReadback = new NativeArray<Color32>(pixelCount, Allocator.Persistent);
+            _rightReadback = new NativeArray<Color32>(pixelCount, Allocator.Persistent);
+            _leftPixelCache = new Color32[pixelCount];
+            _rightPixelCache = new Color32[pixelCount];
+        }
+
         return true;
     }
 
@@ -1402,20 +1466,35 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
         _downsampleShader.Dispatch(kernel, threadGroupsX, threadGroupsY, 1);
     }
 
-    private static Task<Color32[]> ReadPixelsAsync(RenderTexture rt)
+    /// <summary>
+    /// Reads the RT into the eye's persistent NativeArray, then memcpys it
+    /// into the eye's reusable managed cache on the main thread and returns
+    /// the cache. The managed hop (~0.5-1 ms) exists so the Task.Run detection
+    /// worker never touches a NativeArray — development-build safety handles
+    /// reject non-job-thread access — and it replaces the previous per-scan
+    /// multi-MB ToArray() allocation. Callers must not start a second readback
+    /// for the same eye before this one completes (the _isScanning
+    /// single-flight guard enforces that).
+    /// </summary>
+    private Task<Color32[]> ReadPixelsIntoCacheAsync(RenderTexture rt, bool leftEye)
     {
         var tcs = new TaskCompletionSource<Color32[]>();
-        AsyncGPUReadback.Request(rt, 0, TextureFormat.RGBA32, request =>
+        Action<AsyncGPUReadbackRequest> onDone = request =>
         {
             if (request.hasError)
             {
                 tcs.SetException(new Exception("[StereoAprilTagScanner] GPU readback error."));
+                return;
             }
-            else
-            {
-                tcs.SetResult(request.GetData<Color32>().ToArray());
-            }
-        });
+            var native = leftEye ? _leftReadback : _rightReadback;
+            var cache = leftEye ? _leftPixelCache : _rightPixelCache;
+            native.CopyTo(cache);
+            tcs.SetResult(cache);
+        };
+        if (leftEye)
+            AsyncGPUReadback.RequestIntoNativeArray(ref _leftReadback, rt, 0, TextureFormat.RGBA32, onDone);
+        else
+            AsyncGPUReadback.RequestIntoNativeArray(ref _rightReadback, rt, 0, TextureFormat.RGBA32, onDone);
         return tcs.Task;
     }
 }

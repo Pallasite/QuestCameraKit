@@ -49,7 +49,14 @@ public sealed class RawTagDetector : IDisposable
         _family = Family.CreateTagStandard41h12();
         _image = ImageU8.Create(width, height);
 
-        _detector.ThreadCount = Math.Max(1, JobsUtility.JobWorkerCount);
+        // Clamp the native apriltag worker pool. Quest 3's XR2 Gen 2 has 8
+        // cores but the OS/compositor reserve ~2 and Unity's main + render
+        // threads must hold 90 Hz, leaving ~3-4 cores of real headroom.
+        // Detection now runs on a Task.Run worker (StereoAprilTagScanner), so
+        // worst-case CPU-bound threads = 1 task worker + this pool; the old
+        // Max(1, JobWorkerCount) setting oversubscribed cores against Unity's
+        // own render jobs (two detectors each spawning a full pool).
+        _detector.ThreadCount = Math.Clamp(JobsUtility.JobWorkerCount / 2, 1, 3);
         _detector.QuadDecimate = decimation;
         _detector.AddFamily(_family);
     }

@@ -957,8 +957,18 @@ rebuild modes.
 **Join key.** The wide experiment CSV records which solver was active when: a
 `session_event` / `config_change` row with
 `detail = "rot_solver=<mode>;tag_size_m=<F3>;reason=boot"` is emitted at
-launch, and another with `reason=set_rot_solver` on every web-console cycle.
-Split this file by wall clock against those rows (both files carry unix ms).
+launch, and another with `reason=set_rot_solver` on every cycle — via the web
+console's Rot solver button or the in-headset R-grip+Y chord (both write the
+same detail format). Split this file by wall clock against those rows (both
+files carry unix ms).
+
+**Timing note (2026-08-03).** Detection now runs on a background thread (the
+synchronous version cost visible frame drops near the obstacle). Rows are still
+written on the main thread when results arrive, so `timestamp_unix_ms` lags the
+actual camera capture by one detect duration (~30-80 ms). Irrelevant for
+per-solver aggregate comparisons; relevant only if you correlate individual
+rows against the high-frequency pose logs at sub-100 ms precision — use the
+capture-side pose already baked into the row's `pos_*`/`rot_*` instead.
 
 **Typical analysis** (per-solver accuracy summary):
 
