@@ -110,7 +110,7 @@ MonoBehaviour:
   tagSizeMeters: 0.171
   sizeSource: {fileID: 0}
   corrector: {fileID: 0}
-  displayMode: 1
+  displayMode: 4
   placement: {fileID: 0}
   colorByQuality: 1
   streamingQualityGradient:
@@ -262,4 +262,4 @@ MonoBehaviour:
   displayManager: {fileID: 0}
   fileName: apriltag_solver_comparison.csv
   enableLogging: 1
-  flushEvery: 30
+  flushEvery: 120
