@@ -137,8 +137,10 @@ simple single/double-AprilTag placement flow. All work below is committed in
      HOLD L index = Place, HOLD R-grip + L index = Recapture, HOLD both index =
      Start trials, HOLD R index = Redo, HOLD R-grip + R index = Next trial,
      HOLD R-grip + Start = Cycle preset, PRESS Start = Pause/Resume, PRESS
-     R-stick = diagnostics. Finesse owns sticks/grips/A/B. Previous-trial is
-     web-console only.
+     R-stick = diagnostics, PRESS R-grip + Y = Cycle rot solver (2026-08-03;
+     Y chosen because it is bound to nothing project-wide — survives a
+     ConstellationDriftCorrector returning and reclaiming R-grip+A/B).
+     Finesse owns sticks/grips/A/B. Previous-trial is web-console only.
    - `TrialLoopActivator.cs` — **arms the trial loop. Nothing else in the
      project ever set IsArmed/AutoReset/TrialSequenceActive — that is why walks
      never completed in past field sessions.** Also Pause()/Resume().
@@ -218,20 +220,74 @@ label the new one **"Rot solver"** everywhere.
   the prefab default (value also 2) — left in place to avoid touching WIP; if
   you later change the prefab default, remember Scratch pins its own value.
 
+### Field-test fix pass 2 (UPDATE 2026-08-03)
+
+First device test of the Scratch scene (2026-07/08) reported four issues; all
+root-caused and fixed. The university network blocks adb-forward/localhost, so
+the web console is unusable in the lab — the R-grip+Y chord (above) is the
+console-free path to solver cycling.
+
+- **Occlusion was inert in Scratch** — the scene had no `EnvironmentDepthManager`,
+  and Meta's occlusion subgraph silently renders FULLY VISIBLE (occlusion = 1.0)
+  when nothing enables the global `SOFT_/HARD_OCCLUSION` keyword. The material
+  swap ran and "succeeded" invisibly. Fixed: `[BuildingBlock] Occlusion
+  Dependencies` + `EnvironmentDepthManager` (SoftOcclusion, parity with Lifted)
+  added to Scratch, and `OcclusionSwapper` now logs a WARNING at Start when the
+  depth manager is missing/None so this can never fail silently again.
+  **Fallback knob**: soft occlusion has standing GPU cost — if 90 fps doesn't
+  hold, set `_occlusionShadersMode = 1` (HardOcclusion; harder edges, cheaper).
+- **90→60-70 fps near the obstacle during trials** — the scan distance gate
+  opens at ~2.57 m and each 8 Hz scan ran BOTH eyes' native AprilTag detection
+  + grayscale conversion synchronously on the main thread in one frame, plus
+  ~2.5-3.3 MB of fresh allocations per scan. Fixed: detection now runs on a
+  background thread (`Task.Run`, QR-scanner pattern), GPU readback goes into
+  persistent reusable buffers (`RequestIntoNativeArray`), and the native
+  detector thread pool is clamped to 3 (was: full JobWorkerCount × 2 detectors,
+  oversubscribing cores against Unity's render jobs). The monocular
+  `AprilTagScanner` (disabled everywhere) still has the old allocating readback
+  if ever re-enabled.
+- **Wireframe visible during trials** — prefab `displayMode` was
+  `DuringCalibrationOnly` which falls through to always-draw when no corrector
+  exists; now `DuringPlacementSetup` (hidden once placed; `ForceVisible` via
+  diagnostics still overrides). Also ticked GPU instancing on the wireframe
+  material (speculative).
+- **Per-eye wireframe mismatch** — render stack audited and provably
+  stereo-safe (stock URP/Unlit, full stereo macros, SPI, world-space mesh,
+  single camera); the symptom matches tag-pose DEPTH error + latency, which
+  rendering can't fix. Diagnostic for next session below. Mitigations if
+  confirmed: caliper-check the print vs `tagSizeMeters`, judge from closer;
+  KabschRescaledRadial already pins depth via the tag-size prior.
+- Solver-comparison CSV flush cadence raised (flushEvery 30 → 120) to reduce
+  main-thread I/O hitches; boot/cycle `config_change` events unchanged.
+
 ## Immediate next step
 
 **Device-test BOTH scenes** (QuestBuildWindow "Build + Deploy" or
 `Tools/Deploy-Latest.ps1`). Watch for:
 - Scene B passthrough rendering (fresh OVRPassthroughLayer vs A's building block).
-- Scene B has **no occlusion** (`EnvironmentDepthManager` omitted — open
-  question whether to add for parity).
-- The chord map (untested on hardware; bindings are serialized — retune freely).
-- Rotation-solver pass (2026-07-29, untested on hardware): cycle all 5 modes
-  from the web console; HUD diagnostics + "Rot solver" status row should track
-  each press; pulled `apriltag_solver_comparison.csv` should show all 5 solver
-  labels with nonzero `residual_m` for KabschTemplateFit/StereoPnP and `size_m`
-  no longer pinned to exactly 0.171; wide CSV should have `rot_solver`
-  config_change rows at boot + each cycle.
+- **Perf**: fps ≥ ~90 inside the ~2.57 m scan gate during trials (previously
+  60-70); if profiling, `ProcessImage` should no longer appear on the main
+  thread and per-scan GC alloc should be near zero.
+- **Occlusion (Scratch)**: obstacle occludes behind real objects within 0.75 m
+  (soft edges); no "[OcclusionSwapper] ... INERT" warning in logcat; watch for
+  a one-frame hitch at the FIRST swap of a session (shader variant compile) —
+  if present, add a Ready-phase pre-swap or ShaderVariantCollection warmup.
+- **Wireframe**: visible during Setup, gone the moment placement commits and
+  throughout trials; back via diagnostics ForceVisible.
+- **Per-eye diagnostic** (2 min, during Setup): compare the marker CUBE against
+  the WIREFRAME at the same tag. If the cube shows the same per-eye offset →
+  pose depth error confirmed (not a render bug); if only the wireframe
+  misbehaves → escalate, the immediate-mode draw path is implicated after all.
+- **Chord map** (untested on hardware; bindings serialized — retune freely),
+  now including R-grip+Y: expect double-buzz per press, "Rot solver: X" HUD
+  transient outside Running, and `reason=set_rot_solver` config_change rows.
+- Rotation-solver pass (2026-07-29): cycle all 5 modes (chord or console);
+  pulled `apriltag_solver_comparison.csv` should show all 5 solver labels with
+  nonzero `residual_m` for KabschTemplateFit/StereoPnP and `size_m` no longer
+  pinned to exactly 0.171; wide CSV has `rot_solver` config_change rows at
+  boot + each cycle.
+- Calibration sweep (`ScanCalibrationAsync`) still converges — exercises the
+  readback-buffer realloc path in both directions.
 Then: fixes land in the shared code so both scenes benefit; analyze pulled CSVs
 per `SingleTagObstacleHandoff.md`.
 

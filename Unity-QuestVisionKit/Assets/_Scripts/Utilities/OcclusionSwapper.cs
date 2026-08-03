@@ -115,8 +115,41 @@ public class OcclusionSwapper : MonoBehaviour
             Debug.LogWarning("[OcclusionSwapper] No main camera found. Auto-swap will not work.");
         }
 
+        WarnIfDepthStackMissing();
+
         // Start with non-occlusion material (player assumed far away initially)
         SetObstacleOcclusion(false);
+    }
+
+    // The occlusion material is not self-contained: Meta's occlusion subgraph
+    // hard-codes occlusion = 1.0 (fully visible) unless an active
+    // EnvironmentDepthManager globally enables HARD_/SOFT_OCCLUSION and binds
+    // the depth texture. Without one, material swaps run and report success
+    // while rendering identically — a completely silent failure that survived
+    // to a device pass once already (Scratch scene, 2026-08).
+    private void WarnIfDepthStackMissing()
+    {
+        if (!Meta.XR.EnvironmentDepth.EnvironmentDepthManager.IsSupported)
+        {
+            Debug.Log("[OcclusionSwapper] Environment depth not supported here (editor/PC) — " +
+                      "occlusion swaps will have no visual effect in this session.");
+            return;
+        }
+
+        var depthManager = FindAnyObjectByType<Meta.XR.EnvironmentDepth.EnvironmentDepthManager>();
+        if (depthManager == null)
+        {
+            Debug.LogWarning("[OcclusionSwapper] No EnvironmentDepthManager in the scene — occlusion " +
+                             "material swaps will be visually INERT (the occlusion shader defaults to " +
+                             "fully visible without it). Add the '[BuildingBlock] Occlusion Dependencies' " +
+                             "object with an EnvironmentDepthManager.");
+        }
+        else if (depthManager.OcclusionShadersMode == Meta.XR.EnvironmentDepth.OcclusionShadersMode.None)
+        {
+            Debug.LogWarning("[OcclusionSwapper] EnvironmentDepthManager.OcclusionShadersMode is None — " +
+                             "occlusion material swaps will be visually INERT. Set it to SoftOcclusion " +
+                             "(or HardOcclusion for lower GPU cost).");
+        }
     }
 
     private void Update()
