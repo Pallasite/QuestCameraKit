@@ -38,6 +38,18 @@ Trial markers are unchanged (`walk_event` phases `start`/`moved`/`reset`/`end` f
 The `applied` stream is what the participant experiences; the `observe` stream is the
 live tag's opinion. Their divergence over time is the drift the world-lock is absorbing.
 
+**Coverage caveat + fix (2026-08-04):** before this date BOTH streams exist only
+while a tag was detected — and the trial scan gate idles the scanner exactly while
+the participant approaches, so pre-2026-08-04 `applied` rows are a near-tag-biased
+subset (per-walk stability is not computable from them). From 2026-08-04 the
+`applied` stream is ALSO emitted on a fixed timer (default 2 Hz) once placed,
+tagged `sampler=timer` in `detail`. For continuous stability analysis use the
+timer rows (`detail.str.contains("sampler=timer")`); use the untagged
+detection-driven rows when you specifically want tag-visible moments (e.g. the
+divergence merge in step 2 below — `observe` remains detection-only by nature).
+The obstacle's actual world position (tag offset + finesse + anchor motion) rides
+in `detail` as `obstacle_pos=x|y|z` on every `applied` row.
+
 ```python
 import pandas as pd
 df = pd.read_csv(path, low_memory=False, encoding="utf-8-sig")  # utf-8-sig strips the BOM

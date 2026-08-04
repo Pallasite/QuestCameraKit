@@ -131,6 +131,23 @@ distinguished by `mode`:
 - `mode=applied` — `anchor_pos_xyz` / `anchor_rot_xyzw` = the obstacle base's
   **actual** (anchor/world-locked) world pose.
 
+**Timer-driven `applied` rows (2026-08-04, additive):** detection-driven rows
+stop whenever no tag is detected — and during trials the scan distance gate
+idles the scanner beyond ~`tagSize×15`, i.e. exactly while the participant
+approaches and crosses the obstacle. Once placed, `ObstaclePlacementController`
+therefore ALSO emits `mode=applied` rows on a fixed timer (default 2 Hz,
+`appliedSampleRateHz` in the Inspector), tagged `sampler=timer` in `detail`.
+Analysis notes:
+
+- Rows **with** `sampler=timer` = uniform-cadence coverage of the pose the
+  participant actually sees (including through every walk, pause, and tag
+  occlusion). Use these for continuous obstacle/anchor stability analysis.
+- Rows **without** it = detection-driven (a tag was visible that frame); their
+  cadence is a proxy for tag visibility. The `mode=observe` stream remains
+  detection-only by nature.
+- Timer rows carry the same `anchor_pos_xyz`/`headset_pos_xyz` semantics and
+  the `obstacle_pos=` detail; `correction_source` is the active solver label.
+
 **Rotation semantics (2026-07-14, additive — still schema v1):** for
 `apriltag_single` rows, `anchor_rot_xyzw` is **yaw-flattened** — the solver
 reduces the detected tag rotation to an upright, yaw-only rotation before
@@ -269,3 +286,8 @@ On the Quest, sessions land in `Application.persistentDataPath` which maps to
   floor via the size-aware solvers' range rescale). Data recorded before this
   date with 0.171 configured carries that range error in all tag-derived
   positions.
+- **v1 (additive, no bump — 2026-08-04)** — timer-driven `mode=applied`
+  state_snapshots (`sampler=timer` in `detail`, default 2 Hz) close the
+  walk-time blind spot: before this date the `applied` stream is sampled only
+  while a tag was detected (a near-tag-biased subset), so per-walk obstacle
+  stability cannot be computed from pre-2026-08-04 sessions.

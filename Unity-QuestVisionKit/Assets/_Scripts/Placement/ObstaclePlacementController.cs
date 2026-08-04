@@ -115,6 +115,15 @@ public sealed class ObstaclePlacementController : MonoBehaviour
     [SerializeField] private bool logMeasurements = true;
     [SerializeField, Range(1f, 30f)] private float measurementLogRateHz = 30f;
 
+    [Tooltip("Emit a state_snapshot mode=applied row on a fixed timer once placed, independent " +
+             "of tag detections. The trial scan distance gate idles the scanner exactly while the " +
+             "participant approaches, so detection-driven applied rows stop mid-walk — this timer " +
+             "keeps the obstacle's actual pose sampled through the walk. Transform reads only " +
+             "(no camera work); lower the rate or disable if chasing frame time.")]
+    [SerializeField] private bool sampleAppliedPose = true;
+    [Tooltip("Cadence of the timer-driven applied-pose rows (rows/second).")]
+    [SerializeField, Range(0.2f, 10f)] private float appliedSampleRateHz = 2f;
+
     // ---- runtime ----
     private Transform _anchorRoot;
     private Transform _tagOffset;
@@ -137,6 +146,7 @@ public sealed class ObstaclePlacementController : MonoBehaviour
     private float _latestSetTime;
     private float _lastTagSeenTime = float.NegativeInfinity;
     private float _nextMeasurementLogTime;
+    private float _nextAppliedSampleTime;
     private Transform _cameraRef;
     private int _presetIndex;
 
@@ -368,6 +378,12 @@ public sealed class ObstaclePlacementController : MonoBehaviour
         {
             _ghost.transform.SetPositionAndRotation(_latestProposed.position, _latestProposed.rotation);
             if (!_ghost.activeSelf) _ghost.SetActive(true);
+        }
+
+        if (_placed && sampleAppliedPose && Time.unscaledTime >= _nextAppliedSampleTime)
+        {
+            _nextAppliedSampleTime = Time.unscaledTime + 1f / Mathf.Max(0.1f, appliedSampleRateHz);
+            EmitAppliedSnapshot("sampler=timer");
         }
     }
 
@@ -649,15 +665,34 @@ public sealed class ObstaclePlacementController : MonoBehaviour
         obs.HeadsetRot = headRot;
         SessionLogger.Instance.Enqueue(obs);
 
-        var app = LogEvent.StateSnapshot(_solver.SourceLabel, mode: "applied");
+        EmitAppliedSnapshot(null);
+    }
+
+    /// <summary>
+    /// One state_snapshot mode=applied row: the pose the participant actually
+    /// sees. AnchorPos is the TagOffset; the obstacle's ACTUAL world position
+    /// (TagOffset + finesse offset + any anchor motion) rides in detail —
+    /// without it, a finesse Y nudge or an anchor jump after commit is
+    /// invisible in the data. Called per accepted detection (via
+    /// <see cref="LogMeasurement"/>) and by the timer sampler (detail gains
+    /// <c>sampler=timer</c>) so coverage continues while the scan gate idles
+    /// the scanner mid-walk.
+    /// </summary>
+    private void EmitAppliedSnapshot(string extraDetail)
+    {
+        if (SessionLogger.Instance == null) return;
+
+        var cam = CameraRef();
+        var app = LogEvent.StateSnapshot(_solver != null ? _solver.SourceLabel : "(none)", mode: "applied");
         app.AnchorPos = _tagOffset.position;
         app.AnchorRot = _tagOffset.rotation;
-        app.HeadsetPos = headPos;
-        app.HeadsetRot = headRot;
-        // The obstacle's ACTUAL world position (TagOffset + finesse offset +
-        // any anchor motion). Without this, a finesse Y nudge or an anchor
-        // jump after commit is invisible in the data.
-        if (_obstacle != null) app.Detail = $"obstacle_pos={Fmt(_obstacle.position)}";
+        app.HeadsetPos = cam ? cam.position : (Vector3?)null;
+        app.HeadsetRot = cam ? cam.rotation : (Quaternion?)null;
+
+        string detail = _obstacle != null ? $"obstacle_pos={Fmt(_obstacle.position)}" : null;
+        if (!string.IsNullOrEmpty(extraDetail))
+            detail = detail == null ? extraDetail : detail + ";" + extraDetail;
+        app.Detail = detail;
         SessionLogger.Instance.Enqueue(app);
     }
 

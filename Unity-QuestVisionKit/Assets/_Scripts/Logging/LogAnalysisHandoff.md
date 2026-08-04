@@ -383,6 +383,13 @@ for finer drift resolution — the three snapshot streams below now sample at
   `ControllerObstaclePlacer`, ~30Hz, **only while a placer-anchor lock is
   active**. They populate `anchor_pos_xyz` / `anchor_rot_xyzw` (the
   placer's dedicated anchor pose). Other pose fields are empty.
+- `correction_source in ('apriltag_single','apriltag_pair')` rows come from
+  `ObstaclePlacementController` (the single/double-tag experiment scenes) in an
+  `observe` / `applied` mode pair per detection tick — plus, from 2026-08-04,
+  timer-driven `mode=applied` rows (default 2 Hz, `sampler=timer` in `detail`)
+  that continue through walks while the scan gate idles the scanner. Full
+  semantics + analysis recipes: `SingleTagObstacleHandoff.md` and the
+  "Single/double-tag obstacle placement" section of `SessionLoggerSchema.md`.
 
 #### `sleep_event`
 
