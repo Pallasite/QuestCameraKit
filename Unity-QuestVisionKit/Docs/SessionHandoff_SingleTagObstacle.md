@@ -319,6 +319,15 @@ Third device test: occlusion confirmed working; two new symptoms, both fixed:
 
 ## Immediate next step
 
+**UPDATE 2026-08-04:** the Tier 0 hardening branch (`SingleTagObstacle-Tier0`)
+landed on top of this state — pose sampler, per-action haptics, logcat
+heartbeat (`Tools/Watch-Session.ps1`), silent-death watchdogs, data-contract
+fixes (walk `abandoned` rows, git provenance, CSV readiness gate), finesse
+gating + nudge logging, and pull-time validation (`Tools/Validate-Session.ps1`).
+**The ordered on-device checklist for the next pass is now
+`Docs/DeviceTestScript.md`** — it merges the fix-pass items below with the
+Tier 0 verification. The list below is kept for context:
+
 **Device-test BOTH scenes** (QuestBuildWindow "Build + Deploy" or
 `Tools/Deploy-Latest.ps1`). Watch for:
 - Scene B passthrough rendering (fresh OVRPassthroughLayer vs A's building block).
