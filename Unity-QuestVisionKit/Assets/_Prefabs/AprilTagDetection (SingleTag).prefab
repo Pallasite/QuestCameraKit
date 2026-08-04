@@ -10,7 +10,6 @@ GameObject:
   m_Component:
   - component: {fileID: 7120217153661797652}
   - component: {fileID: 3760649081596045103}
-  - component: {fileID: 6584871663056619710}
   - component: {fileID: 6033049460946740}
   - component: {fileID: 31299415333935468}
   - component: {fileID: 3453745933199870206}
@@ -53,22 +52,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AprilTagScanner
   sampleFactor: 2
-  tagSizeMeters: 0.171
+  tagSizeMeters: 0.092
   targetTagIds: 
---- !u!114 &6584871663056619710
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2053625363347814627}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 09420e86413e14ef6a1192b572643886, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::MarkerPool
-  markerPrefab: {fileID: 5770893990329113263, guid: c1066bdbdc55a0c45a75cc6691eb62af, type: 3}
-  poolSize: 4
 --- !u!114 &6033049460946740
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -84,7 +69,7 @@ MonoBehaviour:
   placementMode: 0
   markerDisplayScale: 1
   markerPool: {fileID: 0}
-  markerDisplayMode: 0
+  markerDisplayMode: 2
   placementGate: {fileID: 0}
   proximityGate: {fileID: 0}
   maxScanDistanceMeters: 2.5
@@ -107,7 +92,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AprilTagWireframeVisualizer
   wireframeMaterial: {fileID: 2100000, guid: 007914e691e51ed41a4b0269a6ab175f, type: 2}
-  tagSizeMeters: 0.171
+  tagSizeMeters: 0.092
   sizeSource: {fileID: 0}
   corrector: {fileID: 0}
   displayMode: 4
@@ -241,7 +226,7 @@ MonoBehaviour:
   minDecisionMargin: 30
   targetTagIds: 
   maxFrameTimeDeltaMs: 30
-  tagSizeMeters: 0.171
+  tagSizeMeters: 0.092
   calibrationSampleFactor: 2
   calibrationDecimation: 2
   calibrationFrameCount: 8

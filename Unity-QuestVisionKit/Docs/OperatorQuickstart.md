@@ -15,6 +15,13 @@ you: a floating panel always says what to do next.
    also works — then the tag's face direction is the walking direction.)
    Remove any OTHER AprilTags from the room: extra tags cost tracking
    performance.
+   **New or different tag print?** Caliper the tag's **INTERIOR black square
+   border** (NOT the outer printed edge — this tag family puts data bits
+   outside the border) and set `tagSizeMeters` on the detection prefab's
+   StereoAprilTagScanner to that value (current lab print: **92 mm**). A wrong
+   size shifts the obstacle above/below the tag by the size ratio; the panel
+   shows a **TAG SIZE MISMATCH** warning during placement if the measured tag
+   disagrees with the configured value.
 1. Put on the headset, pick up both controllers.
 2. Stand within **1 meter** of the AprilTag (the printed marker) and look at it.
    The panel says "Tag visible" when the cameras see it.

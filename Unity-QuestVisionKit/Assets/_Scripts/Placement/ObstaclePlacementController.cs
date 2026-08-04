@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Globalization;
 using UnityEngine;
 
@@ -49,6 +50,17 @@ public sealed class ObstaclePlacementController : MonoBehaviour
     [Tooltip("Optional. Finesse controller; its manualTarget is pointed at FinesseOffset at " +
              "runtime so the baked-in nudge layer sits between the tag offset and the obstacle.")]
     [SerializeField] private ObstacleFinesseController finesseController;
+
+    [Tooltip("Stereo scanner, for the tag-size mismatch guard (configured tagSizeMeters vs the " +
+             "raw measured edge in each detection). Auto-resolved if empty; guard is skipped " +
+             "when absent (monocular scenes measure no size).")]
+    [SerializeField] private StereoAprilTagScanner stereoScanner;
+
+    [Tooltip("Warn (HUD + one session_event) when the measured tag edge deviates from the " +
+             "configured tagSizeMeters by more than this fraction. The size prior converts " +
+             "any mismatch into a range error (KabschRescaledRadial pushes the tag along the " +
+             "sightline by configured/measured), so this misconfiguration must be loud.")]
+    [SerializeField, Range(0.05f, 0.5f)] private float tagSizeMismatchFraction = 0.15f;
 
     [Header("Condition presets")]
     [Tooltip("Named {solver, policy, variant} bundles cycled as one action. First entry = boot " +
@@ -135,6 +147,11 @@ public sealed class ObstaclePlacementController : MonoBehaviour
     private bool _previewActive;
     private float _lastCorrectionMm = -1f;
 
+    // Tag-size mismatch guard + placement diagnostics state.
+    private float _latestMeasuredTagSize;          // raw measured edge of the latest sized detection
+    private float _nextSizeMismatchHintTime;
+    private bool _sizeMismatchLogged;
+
     // ---- public surface (chords + HUD + future web console) ----
     public bool IsPlaced => _placed;
     public bool HasTagCandidate => _hasLatest;
@@ -199,6 +216,7 @@ public sealed class ObstaclePlacementController : MonoBehaviour
         if (!displayManager) displayManager = FindAnyObjectByType<AprilTagDisplayManager>();
         if (!obstacleController) obstacleController = FindAnyObjectByType<ObstacleController>();
         if (!finesseController) finesseController = FindAnyObjectByType<ObstacleFinesseController>();
+        if (!stereoScanner) stereoScanner = FindAnyObjectByType<StereoAprilTagScanner>();
     }
 
     private void Start()
@@ -225,6 +243,12 @@ public sealed class ObstaclePlacementController : MonoBehaviour
         if (finesseController) finesseController.SetManualTarget(_finesseOffset);
         if (obstacleController) obstacleController.OnObstacleReset += ApplyPendingCorrection;
 
+        // Diagnostics: Meta-button recenters move the world origin; the anchor
+        // should compensate for the placed obstacle. Log each recenter so the
+        // pulled CSV shows whether it did. OVRManager.display exists by Start
+        // (created in OVRManager.Awake); null-guard for editor/no-rig scenes.
+        if (OVRManager.display != null) OVRManager.display.RecenteredPose += LogRecenter;
+
         LogConfigChange("boot");
     }
 
@@ -241,6 +265,7 @@ public sealed class ObstaclePlacementController : MonoBehaviour
     private void OnDestroy()
     {
         if (obstacleController) obstacleController.OnObstacleReset -= ApplyPendingCorrection;
+        if (OVRManager.display != null) OVRManager.display.RecenteredPose -= LogRecenter;
         if (_ghost != null) Destroy(_ghost);
     }
 
@@ -291,6 +316,8 @@ public sealed class ObstaclePlacementController : MonoBehaviour
         // Stamp visibility on ANY detection batch, before the solver filters by
         // ID/stability — the HUD's "tag last seen" reads this.
         if (detections != null && detections.Length > 0) _lastTagSeenTime = Time.time;
+
+        CheckTagSizeMismatch(detections);
 
         if (_solver == null) return;
         if (!_solver.TryGetPose(detections, Time.time, out var proposed)) return;
@@ -540,9 +567,19 @@ public sealed class ObstaclePlacementController : MonoBehaviour
 
         if (SessionLogger.Instance != null)
         {
+            // measured_tag_m = raw triangulated edge at commit time — a
+            // per-placement calibration check against the configured size.
+            string measuredTag = _latestMeasuredTagSize > 0f
+                ? _latestMeasuredTagSize.ToString("F3", CultureInfo.InvariantCulture)
+                : "n/a";
             SessionLogger.Instance.Enqueue(LogEvent.SessionEvent(
                 "obstacle_placed",
-                $"solver={_solver.SourceLabel};preset={CurrentPresetName};variant={trackingVariant};policy={visualPolicy};pos={Fmt(pose.position)}"));
+                $"solver={_solver.SourceLabel};preset={CurrentPresetName};variant={trackingVariant};policy={visualPolicy};pos={Fmt(pose.position)};measured_tag_m={measuredTag}"));
+        }
+
+        if (trackingVariant == TrackingVariant.Anchored)
+        {
+            StartCoroutine(LogAnchorSettled(pose.position));
         }
 
         OnPlaced?.Invoke();
@@ -617,7 +654,94 @@ public sealed class ObstaclePlacementController : MonoBehaviour
         app.AnchorRot = _tagOffset.rotation;
         app.HeadsetPos = headPos;
         app.HeadsetRot = headRot;
+        // The obstacle's ACTUAL world position (TagOffset + finesse offset +
+        // any anchor motion). Without this, a finesse Y nudge or an anchor
+        // jump after commit is invisible in the data.
+        if (_obstacle != null) app.Detail = $"obstacle_pos={Fmt(_obstacle.position)}";
         SessionLogger.Instance.Enqueue(app);
+    }
+
+    /// <summary>
+    /// Tag-size misconfiguration guard. SizeMeters on a detection is the RAW
+    /// stereo-triangulated edge (captured before any solver rescale), so a
+    /// large deviation from the scanner's configured tagSizeMeters means the
+    /// physical print doesn't match the config — which the size-aware solvers
+    /// convert into a pure range error (obstacle above/below the tag). This
+    /// exact failure shipped once: 171 mm configured (outer printed extent)
+    /// vs 92 mm physical (interior border square, the AprilTag measurement
+    /// zone) put the obstacle ~1 m under the floor.
+    /// </summary>
+    private void CheckTagSizeMismatch(AprilTagDisplayManager.TagWorldPose[] detections)
+    {
+        if (stereoScanner == null || detections == null) return;
+        float configured = stereoScanner.TagSizeMeters;
+        if (configured <= 0f) return;
+
+        float measured = 0f;
+        foreach (var d in detections)
+        {
+            if (d.SizeMeters > 0f) { measured = d.SizeMeters; break; }
+        }
+        if (measured <= 0f) return;
+        _latestMeasuredTagSize = measured;
+
+        float deviation = Mathf.Abs(measured - configured) / configured;
+        if (deviation <= tagSizeMismatchFraction) return;
+
+        // One session_event per launch — the pulled CSV self-documents the
+        // miscalibration even if nobody watched the HUD.
+        if (!_sizeMismatchLogged && SessionLogger.Instance != null)
+        {
+            _sizeMismatchLogged = true;
+            SessionLogger.Instance.Enqueue(LogEvent.SessionEvent(
+                "tag_size_mismatch",
+                string.Format(CultureInfo.InvariantCulture,
+                    "configured_m={0:F3};measured_m={1:F3};ratio={2:F2}",
+                    configured, measured, measured / configured)));
+        }
+
+        // Rate-limited HUD hint while the operator is still placing (the HUD
+        // canvas is visible in Setup/Ready; during trials the hint would be
+        // hidden anyway).
+        if (!_placed && Time.unscaledTime >= _nextSizeMismatchHintTime)
+        {
+            _nextSizeMismatchHintTime = Time.unscaledTime + 5f;
+            Hud($"TAG SIZE MISMATCH: configured {configured * 1000f:F0} mm, measured ~{measured * 1000f:F0} mm — " +
+                "set tagSizeMeters to the INTERIOR square border");
+        }
+    }
+
+    /// <summary>
+    /// Logs the anchor root's pose ~2 s after placement, when OVRSpatialAnchor
+    /// localization has settled. A large delta vs the commit pose means the
+    /// anchor moved the whole chain after the operator saw it placed — the
+    /// failure mode current per-commit logging cannot see.
+    /// </summary>
+    private IEnumerator LogAnchorSettled(Vector3 commitPos)
+    {
+        yield return new WaitForSecondsRealtime(2f);
+        if (_anchorRoot == null || SessionLogger.Instance == null) yield break;
+
+        var settled = _anchorRoot.position;
+        float deltaMm = Vector3.Distance(commitPos, settled) * 1000f;
+        SessionLogger.Instance.Enqueue(LogEvent.SessionEvent(
+            "anchor_settled",
+            string.Format(CultureInfo.InvariantCulture,
+                "commit_pos={0};settled_pos={1};delta_mm={2:F1};anchor={3}",
+                Fmt(commitPos), Fmt(settled), deltaMm, AnchorStatus)));
+    }
+
+    // Meta-button recenter moves the world origin; the anchor should hold the
+    // placed obstacle in physical space. One row per recenter shows whether it
+    // did (and how far unanchored content — e.g. anything parked at origin —
+    // would have jumped).
+    private void LogRecenter()
+    {
+        if (SessionLogger.Instance == null) return;
+        string obstaclePos = _obstacle != null ? Fmt(_obstacle.position) : "n/a";
+        SessionLogger.Instance.Enqueue(LogEvent.SessionEvent(
+            "recenter",
+            $"placed={(_placed ? 1 : 0)};obstacle_pos={obstaclePos};anchor={AnchorStatus}"));
     }
 
     private Transform CameraRef()

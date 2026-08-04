@@ -197,7 +197,9 @@ label the new one **"Rot solver"** everywhere.
   StereoPnP stays reachable at runtime as the theoretical-boundary probe.
 - **ONE tag-size knob.** `StereoAprilTagScanner.tagSizeMeters` on
   `AprilTagDetection (SingleTag).prefab` is the single editor-set source of
-  truth (0.171 m, caliper-verified; testing other sizes = change it there).
+  truth. (Originally set 0.171 m believed caliper-verified — **corrected to
+  0.092 m on 2026-08-03**: 171 mm was the OUTER printed extent; the AprilTag
+  measurement zone is the INTERIOR border square. See fix pass 3 below.)
   The wireframe visualizer auto-syncs via its `sizeSource` GetComponent; the
   mono `AprilTagScanner` on the same GameObject is disabled. Stale serialized
   wireframe fallbacks (0.097) were cleaned to match.
@@ -275,6 +277,46 @@ console-free path to solver cycling.
 - Solver-comparison CSV flush cadence raised (flushEvery 30 → 120) to reduce
   main-thread I/O hitches; boot/cycle `config_change` events unchanged.
 
+### Fix pass 3 (UPDATE 2026-08-03, same day): tag-size convention + marker mis-spawn
+
+Third device test: occlusion confirmed working; two new symptoms, both fixed:
+
+- **Obstacle placed >1 m BELOW the tag.** Root cause: `tagSizeMeters = 0.171`
+  was the tag's OUTER printed extent, but for **tagStandard41h12 the AprilTag
+  size parameter is the INTERIOR black square border** (this family puts data
+  bits OUTSIDE the border) — the lab print's interior square is **92 mm**.
+  The size-aware solvers convert configured/measured (171/92 ≈ 1.86×) into a
+  pure RANGE error along the steep downward sightline → ~1 m under the floor.
+  The same depth error was almost certainly the earlier "per-eye wireframe
+  mismatch" report. Fixed: `tagSizeMeters = 0.092` everywhere (prefab stereo +
+  mono + wireframe fallback, Lifted inline stack); scanner tooltip documents
+  the convention; **new tag-size mismatch guard** in
+  `ObstaclePlacementController` (HUD warning + one `tag_size_mismatch`
+  session_event when measured vs configured deviates >15%) makes this class
+  of error self-report. Note the trial scan cutoff scales with tag size:
+  0.092 × 15 ≈ **1.38 m** now (correct by construction — a 92 mm tag isn't
+  usable much past that anyway).
+- **Extra obstacle(s) at start / at the user's feet after Meta-button
+  recenter.** `MarkerPool.markerPrefab` on the detection prefab mis-referenced
+  the Root Obstacle prefab; on first detection the pool activated an obstacle
+  clone, `GetOrCreateMarker` rejected it (no `MarkerController`) AFTER
+  activation, and the clone leaked at world origin — recenters move the
+  origin to the user, so the clones followed while the anchored obstacle
+  correctly held its place. Invisible until the twin-material fix made it
+  visible. Fixed: **marker system removed from the experiment scenes**
+  (MarkerPool component deleted from the prefab + Lifted; markerDisplayMode =
+  Never — the wireframe covers placement feedback; the Marker prefab is
+  legacy QR-sample furniture) and the shared code hardened (MarkerPool
+  refuses to pre-warm a prefab without MarkerController; GetOrCreateMarker
+  deactivates rejects; both LogError).
+- **New placement diagnostics in the wide CSV** (all additive; see
+  SessionLoggerSchema): `measured_tag_m=` in `obstacle_placed`,
+  `tag_size_mismatch`, `anchor_settled` (~2 s post-commit anchor delta),
+  `recenter` (obstacle pos + anchor status per recenter), and
+  `obstacle_pos=` detail on `mode=applied` snapshots (actual obstacle world
+  position incl. finesse + anchor motion — closes the blind spot where a
+  finesse nudge or anchor jump was invisible in data).
+
 ## Immediate next step
 
 **Device-test BOTH scenes** (QuestBuildWindow "Build + Deploy" or
@@ -303,6 +345,14 @@ console-free path to solver cycling.
   boot + each cycle.
 - Calibration sweep (`ScanCalibrationAsync`) still converges — exercises the
   readback-buffer realloc path in both directions.
+- Fix pass 3 (2026-08-03): obstacle lands ON the tag (92 mm size); wireframe
+  hugs the physical tag edges — re-check the per-eye mismatch, expected to
+  collapse with the correct size; NO extra obstacle at start or after a
+  Meta-button recenter; no TAG SIZE MISMATCH warning with the correct print
+  (optionally mis-set the size once to see it fire); placement still gates
+  fine with the tighter 1.38 m trial scan cutoff; pulled CSV shows
+  `measured_tag_m≈0.092` in obstacle_placed, an `anchor_settled` row with
+  small delta, and `recenter` rows if the Meta button was used.
 Then: fixes land in the shared code so both scenes benefit; analyze pulled CSVs
 per `SingleTagObstacleHandoff.md`.
 

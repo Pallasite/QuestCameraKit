@@ -975,7 +975,11 @@ capture-side pose already baked into the row's `pos_*`/`rot_*` instead.
 ```python
 import pandas as pd
 
-TAG_SIZE = 0.171  # physical black-border edge, meters — confirm per session
+TAG_SIZE = 0.092  # INTERIOR black square border, meters — the tagStandard41h12
+                  # measurement zone (NOT the outer printed extent; that
+                  # convention error shipped once as 0.171). Confirm per
+                  # session via the config_change tag_size_m / the
+                  # tag_size_mismatch event.
 df = pd.read_csv("apriltag_solver_comparison.csv")
 df["scale_err_mm"] = (df["size_m"] - TAG_SIZE) * 1000
 print(df.groupby("solver")[["residual_m", "scale_err_mm"]].describe())

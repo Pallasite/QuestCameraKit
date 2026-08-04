@@ -146,7 +146,27 @@ bounded-error question.
 Correction application:
 
 - `session_event subtype=obstacle_placed` — once per placement. `detail`:
-  `solver=...;preset=<name|custom>;variant=Anchored|WorldRoot;policy=Deferred|SmoothedLive|RawLive;pos=x|y|z`.
+  `solver=...;preset=<name|custom>;variant=Anchored|WorldRoot;policy=Deferred|SmoothedLive|RawLive;pos=x|y|z;measured_tag_m=<F3|n/a>`
+  (`measured_tag_m` = raw triangulated tag edge at commit — per-placement
+  calibration check against the configured `tagSizeMeters`; 2026-08-03,
+  additive).
+- Placement/calibration diagnostics (2026-08-03, all additive):
+  - `session_event subtype=tag_size_mismatch` — at most once per launch, when
+    the measured tag edge deviates >15% from the configured size. `detail`:
+    `configured_m=..;measured_m=..;ratio=..`. A size mismatch becomes a pure
+    RANGE error under the size-aware solvers (obstacle above/below the tag),
+    so its presence explains bad placement heights in the same session.
+  - `session_event subtype=anchor_settled` — ~2 s after an Anchored placement.
+    `detail`: `commit_pos=x|y|z;settled_pos=x|y|z;delta_mm=..;anchor=..` —
+    nonzero delta means OVRSpatialAnchor localization moved the chain after
+    commit.
+  - `session_event subtype=recenter` — one per Meta-button recenter. `detail`:
+    `placed=0|1;obstacle_pos=x|y|z|n/a;anchor=..` — shows whether the anchor
+    held the obstacle through the origin change.
+  - `state_snapshot` rows with `mode=applied` now carry
+    `detail=obstacle_pos=x|y|z` — the obstacle's ACTUAL world position
+    (TagOffset + finesse offset + anchor motion), closing the blind spot where
+    `anchor_pos_xyz` only reflected the tag-offset node at commit time.
 - `correction_event` (`mode=applied`, `accepted=1`) — in the Deferred policy, one
   per held correction applied **between trials** (on obstacle reset, after the
   participant passes). `delta_position_m` / `delta_rotation_deg` /
@@ -239,3 +259,13 @@ On the Quest, sessions land in `Application.persistentDataPath` which maps to
   configured size — for `KabschTemplateFit` and `StereoPnP` rows), and its
   `solver` column now records the EFFECTIVE solver on size-unset fallbacks.
   See the "AprilTag solver comparison" section of `LogAnalysisHandoff.md`.
+- **v1 (additive, no bump — 2026-08-03)** — placement/calibration diagnostics:
+  `tag_size_mismatch`, `anchor_settled`, `recenter` session_events;
+  `measured_tag_m=` in `obstacle_placed`; `obstacle_pos=` detail on
+  `mode=applied` state_snapshots (see "Correction application" above). Also
+  from this date `tagSizeMeters` is 0.092 (interior black border square — the
+  AprilTag tagStandard41h12 measurement zone; the previous 0.171 was the outer
+  printed extent, a convention error that placed the obstacle ~1 m below the
+  floor via the size-aware solvers' range rescale). Data recorded before this
+  date with 0.171 configured carries that range error in all tag-derived
+  positions.

@@ -59,11 +59,14 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
     [SerializeField] private float maxFrameTimeDeltaMs = 30f;
 
     [Header("Tag Geometry")]
-    [Tooltip("Physical edge length of the AprilTag's black border in meters. Used by the " +
+    [Tooltip("Edge length of the tag's INTERIOR black square border in meters — the AprilTag " +
+             "measurement zone for tagStandard41h12 (this family puts data bits OUTSIDE the " +
+             "border, so the outer printed extent is the WRONG measurement; using it once put " +
+             "the obstacle ~1 m under the floor). Caliper the interior square. Used by the " +
              "size-aware pose solvers (KabschRescaledRadial, KabschTemplateFit, StereoPnP) " +
-             "and by the corner residual diagnostic. Measure with calipers — a 1 mm error on " +
-             "a 171 mm tag is ~0.6% systematic depth bias.")]
-    [SerializeField] private float tagSizeMeters = 0.171f;
+             "and the corner residual diagnostic; a size mismatch becomes a pure RANGE error " +
+             "of configured/measured, and ObstaclePlacementController warns on >15% deviation.")]
+    [SerializeField] private float tagSizeMeters = 0.092f;
 
     [Header("Calibration Mode (used by ScanCalibrationAsync)")]
     [Tooltip("Sample factor for one-shot high-quality scans. 1 = full camera resolution (recommended).")]
