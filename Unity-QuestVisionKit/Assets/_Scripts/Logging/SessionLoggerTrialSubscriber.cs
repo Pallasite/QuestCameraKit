@@ -84,18 +84,31 @@ public sealed class SessionLoggerTrialSubscriber : MonoBehaviour
     {
         int newIndex = condition != null ? condition.TrialNumber : (_currentWalkIndex + 1);
 
-        // If the previous walk's end row is still pending AND this load is the
-        // natural next trial, the sequencer's completion handler ran before
-        // ours: emit the end row now, with the PREVIOUS walk's condition/index/
-        // timing, before adopting the new trial. A same-index reload (redo of a
-        // fouled walk) or a manual jump does NOT get an end row — "end" keeps
-        // meaning "walk completed". (A repeated start row for the same index is
-        // the redo signature in the data.)
-        if (_endPending && newIndex == _currentWalkIndex + 1)
+        // Why the load happened, from the sequencer — NOT inferred from index
+        // arithmetic. The old `newIndex == _currentWalkIndex + 1` inference
+        // stamped a manually skipped walk as a completed one (a +1 skip is
+        // indistinguishable from a natural advance by index alone), and its
+        // latched _completionConsumed then swallowed the next REAL end row.
+        var reason = trialSequencer != null ? trialSequencer.LastLoadReason : TrialLoadReason.Initial;
+
+        if (_endPending && reason == TrialLoadReason.Advance)
         {
-            EmitEnd();
+            // Natural completion where the sequencer's completion handler ran
+            // before ours: emit the end row now, with the PREVIOUS walk's
+            // condition/index/timing, before adopting the new trial.
+            EmitEnd("end");
             _completionConsumed = true;
         }
+        else if (_endPending && reason == TrialLoadReason.Jump)
+        {
+            // Deliberately abandoned walk (manual next/prev): explicit
+            // abandoned row, never an end row — "end" keeps meaning "walk
+            // completed". No completion callback follows a jump, so
+            // _completionConsumed must NOT be latched here.
+            EmitEnd("abandoned");
+        }
+        // Redo: no end/abandoned row — the repeated start row for the same
+        // index is the redo signature in the data.
         _endPending = false;
 
         _currentCondition = condition;
@@ -119,16 +132,16 @@ public sealed class SessionLoggerTrialSubscriber : MonoBehaviour
             return;
         }
         if (!_endPending) return;
-        EmitEnd();
+        EmitEnd("end");
         _endPending = false;
     }
 
-    private void EmitEnd()
+    private void EmitEnd(string phase)
     {
         float duration = 0f;
         if (SessionLogger.Instance != null)
             duration = (float)(SessionLogger.Instance.NowSession - _walkStartSessionTime);
-        Emit("end", duration);
+        Emit(phase, duration);
     }
 
     private void Emit(string phase, float? duration)

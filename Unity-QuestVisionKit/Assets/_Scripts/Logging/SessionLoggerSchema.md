@@ -51,7 +51,7 @@ Sparse columns (only populated for relevant event types):
 | `sleep_event_type` | string | `sleep_event` — `pulse`, `disconnect`, `reconnect`, `battery_sample` |
 | `time_since_last_pulse_s` | float | `sleep_event` |
 | `walk_index` | int | `walk_event`, `validation_walk` |
-| `walk_phase` | string | `walk_event` — `start`, `moved`, `reset`, `end` |
+| `walk_phase` | string | `walk_event` — `start`, `moved`, `reset`, `end`, `abandoned` (2026-08-04) |
 | `trial_active` | 0/1 | `walk_event` |
 | `move_towards_user` | 0/1 | `walk_event` |
 | `trigger_distance_m` | float | `walk_event` |
@@ -106,7 +106,7 @@ encoding with `"` doubled per RFC 4180.
 | `source_state_change` | on working range transition (Phase 2) | Source entering/leaving active |
 | `sleep_event` | sparse | Pulse sent, disconnect, reconnect, battery sample |
 | `calibration_event` | per sample during cal + 1 summary | Calibration samples + summary |
-| `walk_event` | 2-4 per walk | `start`, optionally `moved` / `reset`, `end` (with cumulative stats) |
+| `walk_event` | 2-4 per walk | `start`, optionally `moved` / `reset`, then `end` (completed) or `abandoned` (manually skipped away) |
 | `validation_walk` | every N walks (Phase 3) | Periodic re-validation markers |
 | `snap_event` | rare (Phase 2) | High-resolution context dump trigger |
 
@@ -163,10 +163,14 @@ bounded-error question.
 Correction application:
 
 - `session_event subtype=obstacle_placed` — once per placement. `detail`:
-  `solver=...;preset=<name|custom>;variant=Anchored|WorldRoot;policy=Deferred|SmoothedLive|RawLive;pos=x|y|z;measured_tag_m=<F3|n/a>`
+  `solver=...;preset=<name|custom>;variant=Anchored|WorldRoot;policy=Deferred|SmoothedLive|RawLive;pos=x|y|z;measured_tag_m=<F3|n/a>;obstacle_h_m=<F3>;base_below_tag_m=<F3>`
   (`measured_tag_m` = raw triangulated tag edge at commit — per-placement
   calibration check against the configured `tagSizeMeters`; 2026-08-03,
-  additive).
+  additive). `obstacle_h_m` / `base_below_tag_m` (2026-08-04, additive) are
+  the renderer-bounds world height and how far the visual base sits below
+  the tag plane at commit (positive = buried) — the prefab pivot lands ON
+  the tag plane, so a centre-pivot mesh sits half-buried unless nudged;
+  these fields make the effective stimulus height unambiguous per session.
 - Placement/calibration diagnostics (2026-08-03, all additive):
   - `session_event subtype=tag_size_mismatch` — at most once per launch, when
     the measured tag edge deviates >15% from the configured size. `detail`:
@@ -201,15 +205,23 @@ Session-flow events (UX pass, all additive — still schema v1):
 | `config_change` | every condition change (preset cycle or individual setter) | `preset=<name|custom>;solver=..;policy=..;variant=..;placed=0|1;reason=boot\|preset:<name>\|set_policy\|set_solver\|set_variant` |
 | `config_change` (rotation-solver variant; 2026-07-29, additive) | AprilTag rotation-solver boot record + every solver cycle | `rot_solver=<NaiveCross\|Kabsch\|KabschRescaledRadial\|KabschTemplateFit\|StereoPnP>;tag_size_m=<F3>;reason=boot\|set_rot_solver` — emitted by `AprilTagSolverComparisonLogger` (boot), `RemoteConsoleServer` (web-console cycle), and `ExperimenterSessionControls` (R-grip+Y chord cycle; 2026-08-03, additive). This is the join key for `apriltag_solver_comparison.csv`; note `rot_solver` (scanner pose solver) is a different axis from `solver` (placement TagSolverMode) in the row above. |
 | `trial_redo` | experimenter redid a fouled walk | `index=..;phase=Running\|Paused` |
-| `trial_skip` | experimenter manually jumped to the next/previous trial (chord or web console; 2026-07-14, additive) | `from=..;to=..;phase=Running\|Paused` |
+| `trial_skip` | experimenter manually jumped to the next/previous trial (chord or web console; 2026-07-14, additive) | `from=..;to=..;phase=Running\|Paused` — `to` is the nearest EXISTING trial number in that direction (2026-08-04: navigation steps over CSV numbering gaps) |
 | `application_pause` / `application_resume` | headset doffed/donned (OS pause) | (empty) — pause also forces a writer flush |
+| `trial_csv` (2026-08-04, additive) | once per trial-CSV load | `source=runtime\|template;rows=..;min=..;max=..;duplicates=..;gaps=..;invalid_lines=..` — structural summary of the loaded file; nonzero `duplicates`/`gaps`/`invalid_lines` also shows on the Setup HUD |
+| `trial_csv_error` (2026-08-04, additive) | trial CSV missing or unparseable | the error text (also shown on the Setup HUD) |
+| `conventions` (2026-08-04, additive) | once at boot | `rot_semantics=yaw_flattened;perturb_axis=horizontal_walk_dir;trigger_metric=xz;reset_metric=3d;pivot=prefab_origin_on_tag_plane;tag_size_m=..;rot_solver=..;sampler_hz=..;pending_max_age_s=..` — the measurement semantics of this build, so a CSV is self-describing without git archaeology. Note `trigger_metric=xz` vs `reset_metric=3d`: the trigger check projects to the floor plane while the auto-reset uses full 3-D head distance (so an eye-height ~1.6 m head must be ~2.5 m out on the floor for a 3 m reset radius) — a deliberate self-report of an asymmetry that predates this row. |
 
-Walk-row semantics under redo: a redone trial produces a **repeated
-`walk_phase=start` row for the same `walk_index` with no intervening `end`** —
-that is the redo signature. `end` rows are only emitted for completed walks.
-A manual skip (`trial_skip`) likewise abandons the current walk — a `start`
-row for a **different** `walk_index` follows with no intervening `end`; use
-the `trial_skip` event's `from`/`to` to attribute it.
+Walk-row semantics under redo/skip (2026-08-04 — `abandoned` introduced): a
+redone trial produces a **repeated `walk_phase=start` row for the same
+`walk_index` with no intervening `end`** — that is the redo signature. A
+manual skip emits an explicit **`walk_phase=abandoned`** row (with the
+abandoned walk's index, condition, and elapsed duration) before the new
+trial's `start`. `end` rows mean ONLY "walk completed". **Pre-2026-08-04
+files violate this:** a +1 skip was logged as `end` (index arithmetic could
+not distinguish a skip from a natural advance), and the walk after such a
+skip could be missing its real `end` row — treat completion counts and
+per-trial durations from those files with suspicion, using `trial_skip`
+events to identify the affected walks.
 
 `session_start.detail` gains `participant_source=file|inspector` (whether
 `participant.txt` on the device overrode the Inspector participant ID).
@@ -219,7 +231,12 @@ the `trial_skip` event's `from`/`to` to attribute it.
 The first `session_event` row (`subtype=session_start`) has a `detail` payload
 of `key=value;key=value;...` pairs:
 
-- `build` — `Application.version`
+- `build` — `Application.version` (a frozen constant to date — use the git
+  fields below for real build identity)
+- `git_sha` / `git_branch` / `git_dirty` / `build_utc` / `unity` —
+  (2026-08-04, additive) the QuestBuilder `BuildInfo` identity of the APK
+  that wrote this file; empty in editor playmode / ad-hoc builds. Previously
+  this lived only in the co-located `session.json` sidecar.
 - `scene` — active scene name
 - `participant` — participant ID
 - `unix_ms` — wall-clock session start
@@ -291,3 +308,13 @@ On the Quest, sessions land in `Application.persistentDataPath` which maps to
   walk-time blind spot: before this date the `applied` stream is sampled only
   while a tag was detected (a near-tag-biased subset), so per-walk obstacle
   stability cannot be computed from pre-2026-08-04 sessions.
+- **v1 (additive, no bump — 2026-08-04, data-contract pass)** —
+  `walk_phase=abandoned` replaces the mis-labelled `end` on manual skips
+  (pre-this-date completion counts/durations need the `trial_skip`
+  cross-check described under "Walk-row semantics"); `session_start.detail`
+  gains git build identity (`git_sha`/`git_branch`/`git_dirty`/`build_utc`/
+  `unity`); new `conventions`, `trial_csv`, and `trial_csv_error`
+  session_events; `obstacle_placed` gains `obstacle_h_m`/`base_below_tag_m`;
+  trial navigation and natural advance step over CSV numbering gaps (a hole
+  no longer ends the session), and boot loads the file's lowest trial number
+  (1-based CSVs no longer fire a spurious sequence-complete).

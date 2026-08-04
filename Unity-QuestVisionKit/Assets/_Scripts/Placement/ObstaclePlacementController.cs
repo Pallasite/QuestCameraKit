@@ -260,6 +260,31 @@ public sealed class ObstaclePlacementController : MonoBehaviour
         if (OVRManager.display != null) OVRManager.display.RecenteredPose += LogRecenter;
 
         LogConfigChange("boot");
+        LogConventions();
+    }
+
+    /// <summary>
+    /// One self-describing row per session: the measurement semantics an
+    /// analyst otherwise reconstructs from git archaeology. Two semantic
+    /// changes (yaw-flattening, the 0.171→0.092 tag-size convention) already
+    /// shipped under schema_version=1 — this row makes every future CSV carry
+    /// its own conventions. Constants-by-construction for this build;
+    /// per-placement specifics ride in obstacle_placed.
+    /// </summary>
+    private void LogConventions()
+    {
+        if (SessionLogger.Instance == null) return;
+        string tagSize = stereoScanner != null
+            ? stereoScanner.TagSizeMeters.ToString("F3", CultureInfo.InvariantCulture)
+            : "n/a";
+        string rotSolver = stereoScanner != null ? stereoScanner.Solver.ToString() : "n/a";
+        SessionLogger.Instance.Enqueue(LogEvent.SessionEvent(
+            "conventions",
+            "rot_semantics=yaw_flattened;perturb_axis=horizontal_walk_dir;trigger_metric=xz;reset_metric=3d;" +
+            "pivot=prefab_origin_on_tag_plane;" +
+            string.Format(CultureInfo.InvariantCulture,
+                "tag_size_m={0};rot_solver={1};sampler_hz={2:F1};pending_max_age_s={3:F1}",
+                tagSize, rotSolver, appliedSampleRateHz, pendingProposalMaxAgeSeconds)));
     }
 
     private void OnEnable()
@@ -603,7 +628,7 @@ public sealed class ObstaclePlacementController : MonoBehaviour
                 : "n/a";
             SessionLogger.Instance.Enqueue(LogEvent.SessionEvent(
                 "obstacle_placed",
-                $"solver={_solver.SourceLabel};preset={CurrentPresetName};variant={trackingVariant};policy={visualPolicy};pos={Fmt(pose.position)};measured_tag_m={measuredTag}"));
+                $"solver={_solver.SourceLabel};preset={CurrentPresetName};variant={trackingVariant};policy={visualPolicy};pos={Fmt(pose.position)};measured_tag_m={measuredTag}{ObstacleGeometryDetail(pose)}"));
         }
 
         if (trackingVariant == TrackingVariant.Anchored)
@@ -790,6 +815,29 @@ public sealed class ObstaclePlacementController : MonoBehaviour
         SessionLogger.Instance.Enqueue(LogEvent.SessionEvent(
             "recenter",
             $"placed={(_placed ? 1 : 0)};obstacle_pos={obstaclePos};anchor={AnchorStatus}"));
+    }
+
+    /// <summary>
+    /// Effective obstacle geometry at commit. The prefab pivot lands on the
+    /// tag plane, so a centre-pivot mesh sits half-buried — until the pivot
+    /// question is settled as protocol, the data must at least say what the
+    /// participant actually saw: total world height, and how deep the visual
+    /// base sits below the tag plane (positive = buried).
+    /// </summary>
+    private string ObstacleGeometryDetail(Pose tagPose)
+    {
+        if (_obstacleRenderers == null) return "";
+        Bounds b = default;
+        bool has = false;
+        foreach (var r in _obstacleRenderers)
+        {
+            if (!r) continue;
+            if (!has) { b = r.bounds; has = true; }
+            else b.Encapsulate(r.bounds);
+        }
+        if (!has) return "";
+        return string.Format(CultureInfo.InvariantCulture,
+            ";obstacle_h_m={0:F3};base_below_tag_m={1:F3}", b.size.y, tagPose.position.y - b.min.y);
     }
 
     private Transform CameraRef()

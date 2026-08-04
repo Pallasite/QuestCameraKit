@@ -94,6 +94,10 @@ public sealed class SessionFlowController : MonoBehaviour
             trialSequencer.OnTrialLoaded += HandleTrialLoaded;
             trialSequencer.OnSequenceComplete += HandleSequenceComplete;
         }
+        // First subscriber this event has ever had: a missing/unparseable CSV
+        // used to surface only in logcat, presenting in-headset as "placement
+        // isn't working" (Ready simply never came).
+        if (trialLoader != null) trialLoader.OnDataError += HandleTrialDataError;
     }
 
     private void OnDisable()
@@ -103,6 +107,14 @@ public sealed class SessionFlowController : MonoBehaviour
             trialSequencer.OnTrialLoaded -= HandleTrialLoaded;
             trialSequencer.OnSequenceComplete -= HandleSequenceComplete;
         }
+        if (trialLoader != null) trialLoader.OnDataError -= HandleTrialDataError;
+    }
+
+    private void HandleTrialDataError(string error)
+    {
+        Debug.LogError($"[SessionFlow] Trial CSV error: {error}");
+        Hud($"<color=#FF2FB9><b>TRIAL CSV ERROR</b></color>\n{error}", 12f);
+        Log("trial_csv_error", error);
     }
 
     private void Start()

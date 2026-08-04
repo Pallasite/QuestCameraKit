@@ -130,8 +130,11 @@ adb push trial_conditions.csv /sdcard/Android/data/<package>/files/trial_conditi
 
 `participant.txt` = one line with the ID (e.g. `P014`). If you skip this, data
 still saves under `P000` with a unique timestamp — write the real ID in the lab
-notebook. **Trial numbers in the CSV must start at 0, not 1** (the headset will
-warn "Trial CSV has no trial 0" if the file is 1-based).
+notebook. **The SETUP panel shows the active participant ID and where it came
+from — check it before starting trials.** Trial numbers may start at 0 or 1
+(the session begins at the file's lowest number); duplicate or missing trial
+numbers are flagged on the SETUP panel, and a numbering gap no longer ends the
+session early — navigation simply steps over it.
 
 ### The trial CSV columns (no header row; `#` lines are comments)
 

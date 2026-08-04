@@ -72,7 +72,7 @@ public sealed class LogEvent
 
     // ---- walk_event ----
     public int? WalkIndex;
-    public string WalkPhase;             // "start", "moved", "reset", "end"
+    public string WalkPhase;             // "start", "moved", "reset", "end", "abandoned"
     public bool? TrialActive;
     public bool? MoveTowardsUser;
     public float? TriggerDistanceM;

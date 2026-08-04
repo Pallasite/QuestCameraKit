@@ -204,6 +204,19 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
         switch (phase)
         {
             case SessionPhase.Setup:
+                // Trial-CSV state first: a bad file used to present as
+                // "placement isn't working" (Ready never comes without data).
+                if (_loader != null && _loader.MissingData)
+                {
+                    _sb.Append("<color=").Append(ExperimentPalette.BadHex)
+                       .Append("><b>TRIAL CSV MISSING/INVALID</b></color>\n")
+                       .Append("Push trial_conditions.csv (see OperatorQuickstart) — trials cannot start without it.\n\n");
+                }
+                else if (_loader != null && _loader.DataWarning != null)
+                {
+                    _sb.Append("<color=").Append(ExperimentPalette.BadHex).Append('>')
+                       .Append(_loader.DataWarning).Append("</color>\n");
+                }
                 if (_placement == null)
                 {
                     _sb.Append("Placement system missing.");
@@ -279,6 +292,15 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
                 _sb.Append("\nPlease remove the headset.\n")
                    .Append("<size=80%>Ended early or need another walk? HOLD BOTH triggers to reopen (paused).</size>");
                 break;
+        }
+
+        // Participant identity stays visible until trials start — a stale
+        // participant.txt mis-attributes an entire session unrecoverably, and
+        // this line is the only place the operator can catch it.
+        if ((phase == SessionPhase.Setup || phase == SessionPhase.Ready) && SessionLogger.Instance != null)
+        {
+            _sb.Append("\n<size=80%>Participant: <b>").Append(SessionLogger.Instance.ParticipantId)
+               .Append("</b> (from ").Append(SessionLogger.Instance.ParticipantSource).Append(")</size>");
         }
         return _sb.ToString();
     }

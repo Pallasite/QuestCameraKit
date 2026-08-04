@@ -1,6 +1,10 @@
 using System;
 using UnityEngine;
 
+/// <summary>Why the most recent trial load happened. Loggers key on this:
+/// only an Advance means the previous walk was actually completed.</summary>
+public enum TrialLoadReason { Initial, Advance, Redo, Jump }
+
 /// <summary>
 /// Owns trial index state. Subscribes to <see cref="TrialLoader.OnDataLoaded"/>
 /// to load the first trial, then advances on
@@ -18,6 +22,12 @@ public class TrialSequencer : MonoBehaviour
 
     public int CurrentTrialIndex { get; private set; } = 0;
     public TrialCondition CurrentTrial { get; private set; }
+
+    /// <summary>Why the most recent <see cref="LoadTrial"/> happened. Read by
+    /// <see cref="OnTrialLoaded"/> subscribers — walk-row logging used to infer
+    /// completion from index arithmetic, which stamped a manually skipped
+    /// (abandoned) walk as a completed one.</summary>
+    public TrialLoadReason LastLoadReason { get; private set; } = TrialLoadReason.Initial;
 
     // ---- events ----
 
@@ -55,8 +65,10 @@ public class TrialSequencer : MonoBehaviour
 
     private void HandleDataLoaded()
     {
-        // Load first trial when CSV becomes available
-        LoadTrial(0);
+        // Load the FIRST trial in the CSV, whatever its number — a 1-based
+        // file used to miss index 0 and fire sequence-complete at boot.
+        LastLoadReason = TrialLoadReason.Initial;
+        LoadTrial(trialLoader != null && !trialLoader.MissingData ? trialLoader.MinTrialNumber : 0);
     }
 
     private void HandleTrialCompleted()
@@ -66,15 +78,22 @@ public class TrialSequencer : MonoBehaviour
 
     // ---- public API ----
 
-    /// <summary>Advance to the next trial.</summary>
+    /// <summary>Advance to the next trial (the previous walk completed).
+    /// Steps to the next EXISTING trial number — a numbering hole in a
+    /// hand-authored CSV used to fire sequence-complete mid-session and end
+    /// the study early. Sequence-complete now fires only past the last row.</summary>
     public void AdvanceTrial()
     {
-        LoadTrial(CurrentTrialIndex + 1);
+        LastLoadReason = TrialLoadReason.Advance;
+        LoadTrial(TryGetAdjacentTrial(CurrentTrialIndex, +1, out int next)
+            ? next
+            : CurrentTrialIndex + 1);   // past the end → OnSequenceComplete
     }
 
     /// <summary>Go back to the previous trial.</summary>
     public void PreviousTrial()
     {
+        LastLoadReason = TrialLoadReason.Jump;
         LoadTrial(CurrentTrialIndex - 1);
     }
 
@@ -84,6 +103,7 @@ public class TrialSequencer : MonoBehaviour
     /// </summary>
     public void RedoCurrentTrial()
     {
+        LastLoadReason = TrialLoadReason.Redo;
         if (obstacleController != null) obstacleController.ResetForRedo();
         LoadTrial(CurrentTrialIndex);
     }
@@ -101,6 +121,7 @@ public class TrialSequencer : MonoBehaviour
         if (trialLoader == null || trialLoader.MissingData) return false;
         if (!trialLoader.TrialConditions.ContainsKey(index)) return false;
 
+        LastLoadReason = TrialLoadReason.Jump;
         if (obstacleController != null) obstacleController.ResetForRedo();
         LoadTrial(index);
         return true;

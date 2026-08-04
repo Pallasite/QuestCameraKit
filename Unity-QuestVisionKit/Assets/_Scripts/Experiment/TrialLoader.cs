@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -41,6 +42,12 @@ public class TrialLoader : MonoBehaviour
 
     /// <summary>Highest trial number in the CSV (0 when none loaded).</summary>
     public int MaxTrialNumber { get; private set; }
+
+    /// <summary>Non-null when the CSV loaded but with structural issues
+    /// (duplicate trial numbers, numbering gaps, unparseable lines). Shown on
+    /// the Setup HUD — these used to surface only in logcat, presenting to the
+    /// operator as "placement isn't working" or a session that ends early.</summary>
+    public string DataWarning { get; private set; }
 
     /// <summary>True if the CSV file could not be found or parsed.</summary>
     public bool MissingData { get; private set; } = true;
@@ -83,7 +90,7 @@ public class TrialLoader : MonoBehaviour
         if (File.Exists(runtimePath))
         {
             string csvData = File.ReadAllText(runtimePath);
-            ParseCSV(csvData);
+            ParseCSV(csvData, source: "runtime");
             Debug.Log($"[TrialLoader] Loaded {TrialCount} trials from: {runtimePath}");
             yield break;
         }
@@ -146,18 +153,20 @@ public class TrialLoader : MonoBehaviour
             // Non-fatal — we can still parse the content we already loaded
         }
 
-        ParseCSV(csvContent);
+        ParseCSV(csvContent, source: "template");
         Debug.Log($"[TrialLoader] Loaded {TrialCount} trials from StreamingAssets template.");
     }
 
     // ---- parsing ----
 
-    private void ParseCSV(string csvData)
+    private void ParseCSV(string csvData, string source)
     {
         TrialConditions.Clear();
 
         string[] lines = csvData.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
         int parsed = 0;
+        int duplicates = 0;
+        int invalidLines = 0;
 
         foreach (string line in lines)
         {
@@ -170,12 +179,20 @@ public class TrialLoader : MonoBehaviour
             string[] values = trimmed.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
             if (values.Length >= 5)
             {
-                if (int.TryParse(values[0].Trim(), out int trialNumber) &&
+                // Invariant culture: a device set to a comma-decimal locale
+                // would otherwise silently misread "1.5" (or reject it), and
+                // the failure looks like a bad CSV rather than a locale bug.
+                if (int.TryParse(values[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int trialNumber) &&
                     bool.TryParse(values[1].Trim(), out bool isActive) &&
                     bool.TryParse(values[2].Trim(), out bool moveTowardsUser) &&
-                    float.TryParse(values[3].Trim(), out float triggerDistance) &&
-                    float.TryParse(values[4].Trim(), out float perturbationDistance))
+                    float.TryParse(values[3].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out float triggerDistance) &&
+                    float.TryParse(values[4].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out float perturbationDistance))
                 {
+                    if (TrialConditions.ContainsKey(trialNumber))
+                    {
+                        duplicates++;
+                        Debug.LogWarning($"[TrialLoader] Duplicate trial number {trialNumber} — later row wins: {trimmed}");
+                    }
                     TrialConditions[trialNumber] = new TrialCondition
                     {
                         TrialNumber = trialNumber,
@@ -188,11 +205,13 @@ public class TrialLoader : MonoBehaviour
                 }
                 else
                 {
+                    invalidLines++;
                     Debug.LogWarning($"[TrialLoader] Invalid data on line: {trimmed}");
                 }
             }
             else
             {
+                invalidLines++;
                 Debug.LogWarning($"[TrialLoader] Incomplete data on line ({values.Length} columns): {trimmed}");
             }
         }
@@ -206,6 +225,20 @@ public class TrialLoader : MonoBehaviour
                 if (key < MinTrialNumber) MinTrialNumber = key;
                 if (key > MaxTrialNumber) MaxTrialNumber = key;
             }
+
+            // Structural validation. A duplicate silently overwrites (creating
+            // a hole where its first occurrence sat), and a hole used to end
+            // the session at that index. Loud on the HUD + one CSV row.
+            int gaps = (MaxTrialNumber - MinTrialNumber + 1) - TrialConditions.Count;
+            DataWarning = (duplicates > 0 || gaps > 0 || invalidLines > 0)
+                ? $"trial CSV: {duplicates} duplicate(s), {gaps} gap(s), {invalidLines} bad line(s)"
+                : null;
+            if (DataWarning != null) Debug.LogWarning($"[TrialLoader] {DataWarning}");
+
+            SessionLogger.Instance?.Enqueue(LogEvent.SessionEvent(
+                "trial_csv",
+                $"source={source};rows={TrialConditions.Count};min={MinTrialNumber};max={MaxTrialNumber};duplicates={duplicates};gaps={gaps};invalid_lines={invalidLines}"));
+
             MissingData = false;
             OnDataLoaded?.Invoke();
         }

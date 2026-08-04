@@ -82,6 +82,11 @@ public sealed class SessionLogger : MonoBehaviour
     public bool WriterHealthy => _writerHealthy;
     public string ParticipantId => participantId;
 
+    /// <summary>"file" when participant.txt overrode the Inspector value, else
+    /// "inspector". Shown on the Setup HUD so a stale participant.txt can't
+    /// silently mis-attribute a session.</summary>
+    public string ParticipantSource => _participantSource;
+
     /// <summary>Main-thread entry point. Drops the event if the writer isn't running.</summary>
     public void Enqueue(LogEvent e)
     {
@@ -132,9 +137,20 @@ public sealed class SessionLogger : MonoBehaviour
             _writerThread = new Thread(WriterLoop) { IsBackground = true, Name = "SessionLoggerWriter" };
             _writerThread.Start();
 
+            // Application.version alone is a frozen constant ("0.1.0") — two
+            // semantic changes have already shipped under schema_version=1, so
+            // the CSV itself must carry the git identity of the build that
+            // wrote it. Same BuildInfo the session.json sidecar uses; blank in
+            // editor playmode / ad-hoc builds.
+            var build = BuildInfo.Load();
             var headerDetail = string.Format(CultureInfo.InvariantCulture,
-                "build={0};scene={1};participant={2};participant_source={3};unix_ms={4};schema_version={5};flush_interval_s={6};notes={7}",
+                "build={0};git_sha={1};git_branch={2};git_dirty={3};build_utc={4};unity={5};scene={6};participant={7};participant_source={8};unix_ms={9};schema_version={10};flush_interval_s={11};notes={12}",
                 Application.version,
+                build.gitSha,
+                build.gitBranch,
+                build.dirty ? 1 : 0,
+                build.buildTimestampUtc,
+                build.unityVersion,
                 SceneManager.GetActiveScene().name,
                 participantId,
                 _participantSource,
