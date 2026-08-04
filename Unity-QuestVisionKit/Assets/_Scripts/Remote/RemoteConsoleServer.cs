@@ -26,7 +26,20 @@ using UnityEngine;
 ///   POST /participant body = ID; written to participant.txt (applies NEXT launch —
 ///                     the current session's CSV is already open)
 ///
-/// No auth: intended for a USB adb-forward or lab-network PoC only.
+/// No auth: intended for a USB adb-forward or lab-network PoC only. Actions
+/// pass through the SAME phase gates the in-headset chords enforce — the
+/// console must never be a bypass route (recapture mid-Running would clear
+/// the placed obstacle under the participant).
+///
+/// LOGCAT HEARTBEAT: independently of the HTTP server, the same status
+/// snapshot is emitted once a second as a single tagged
+/// <c>[SessionHeartbeat] {json}</c> Debug.Log line. The lab network blocks
+/// adb-forward, but USB `adb logcat` needs no network — during development,
+/// device tests, and docked pre/post-session checks,
+/// <c>Tools/Watch-Session.ps1</c> renders these lines as a live status
+/// display. (The experiment itself is untethered: mid-session the operator's
+/// channel is haptics + HUD, not this.) The lines also land in the dev
+/// session.log, giving every session a 1 Hz status trace for free.
 /// </summary>
 [DisallowMultipleComponent]
 public sealed class RemoteConsoleServer : MonoBehaviour
@@ -35,6 +48,14 @@ public sealed class RemoteConsoleServer : MonoBehaviour
     [Tooltip("Start listening on enable. OFF by default — the console is optional support tooling.")]
     [SerializeField] private bool startServerOnEnable = false;
     [SerializeField] private int port = 8787;
+
+    [Header("Logcat heartbeat")]
+    [Tooltip("Emit the status snapshot as one '[SessionHeartbeat] {json}' Debug.Log line per " +
+             "interval, independent of the HTTP server. Read live over USB with " +
+             "Tools/Watch-Session.ps1 (no network needed — the lab blocks adb-forward). " +
+             "Cost: one small string a second.")]
+    [SerializeField] private bool logcatHeartbeat = true;
+    [SerializeField, Range(0.5f, 10f)] private float heartbeatIntervalSeconds = 1f;
 
     [Header("Wiring (auto-resolved if empty)")]
     [SerializeField] private SessionFlowController flow;
@@ -54,6 +75,13 @@ public sealed class RemoteConsoleServer : MonoBehaviour
     private volatile bool _running;
     private volatile string _statusJson = "{}";
     private readonly ConcurrentQueue<Action> _mainThread = new();
+    private float _nextStatusRefresh;
+    private float _nextHeartbeat;
+
+    // The dashboard polls at 1 Hz; rebuilding the snapshot every FRAME was
+    // pure allocation churn (a ~500 B string at 72-90 fps for the whole
+    // session). Refresh on this cadence instead.
+    private const float StatusRefreshSeconds = 0.5f;
 
     public bool IsRunning => _running;
     public int Port => port;
@@ -127,7 +155,23 @@ public sealed class RemoteConsoleServer : MonoBehaviour
             try { action(); }
             catch (Exception e) { Debug.LogWarning($"[RemoteConsole] Action failed: {e.Message}"); }
         }
-        if (_running) _statusJson = BuildStatusJson();
+
+        bool statusDue = _running && Time.unscaledTime >= _nextStatusRefresh;
+        bool heartbeatDue = logcatHeartbeat && Time.unscaledTime >= _nextHeartbeat;
+        if (statusDue || heartbeatDue)
+        {
+            string json = BuildStatusJson();
+            if (statusDue)
+            {
+                _statusJson = json;
+                _nextStatusRefresh = Time.unscaledTime + StatusRefreshSeconds;
+            }
+            if (heartbeatDue)
+            {
+                Debug.Log("[SessionHeartbeat] " + json);
+                _nextHeartbeat = Time.unscaledTime + heartbeatIntervalSeconds;
+            }
+        }
     }
 
     // ---- request handling (listener thread; must not touch Unity APIs) ----
@@ -196,15 +240,32 @@ public sealed class RemoteConsoleServer : MonoBehaviour
     {
         switch (action)
         {
+            // Flow-owned actions gate themselves (each refuses + HUDs outside
+            // its phase). Placement-owned actions do NOT all self-gate, so the
+            // console applies the same gates the chords use — recapture or a
+            // preset change mid-Running would move the obstacle under the
+            // participant.
             case "startTrials": _mainThread.Enqueue(() => flow?.StartTrials()); return true;
             case "pause": _mainThread.Enqueue(() => flow?.Pause()); return true;
             case "resume": _mainThread.Enqueue(() => flow?.Resume()); return true;
             case "redo": _mainThread.Enqueue(() => flow?.RedoTrial()); return true;
             case "nextTrial": _mainThread.Enqueue(() => flow?.NextTrial()); return true;
             case "prevTrial": _mainThread.Enqueue(() => flow?.PreviousTrial()); return true;
-            case "cyclePreset": _mainThread.Enqueue(() => placement?.CyclePreset()); return true;
-            case "recapture": _mainThread.Enqueue(() => placement?.Recapture()); return true;
-            case "place": _mainThread.Enqueue(() => placement?.CapturePlacement()); return true;
+            case "cyclePreset":
+                GatedEnqueue(() => flow == null || flow.CanChangeConfig,
+                    "Console: pause first to change the condition",
+                    () => placement?.CyclePreset());
+                return true;
+            case "recapture":
+                GatedEnqueue(() => flow == null || flow.CanRecapture,
+                    "Console: re-place is available before trials start",
+                    () => placement?.Recapture());
+                return true;
+            case "place":
+                GatedEnqueue(() => flow == null || flow.CanPlace,
+                    "Console: placement not available now",
+                    () => placement?.CapturePlacement());
+                return true;
             case "toggleDiagnostics": _mainThread.Enqueue(() => hud?.ToggleDiagnostics()); return true;
             case "toggleOcclusion": _mainThread.Enqueue(ToggleOcclusion); return true;
             case "cycleScanProfile":
@@ -231,6 +292,20 @@ public sealed class RemoteConsoleServer : MonoBehaviour
                 return true;
             default: return false;
         }
+    }
+
+    // Same phase gates the chords enforce (ExperimenterSessionControls
+    // .IsActionAllowed). Evaluated on the MAIN thread at dequeue time —
+    // listener-thread phase reads would race, and the phase can change
+    // between enqueue and dispatch anyway. flow == null falls open only for
+    // placement-only scenes that have no phase machine at all.
+    private void GatedEnqueue(Func<bool> allowed, string denyMsg, Action act)
+    {
+        _mainThread.Enqueue(() =>
+        {
+            if (allowed()) act();
+            else hud?.ShowTransient(denyMsg, 2.5f);
+        });
     }
 
     // Occlusion investigation knob. Forced-off wins until toggled back, but a
@@ -311,6 +386,8 @@ public sealed class RemoteConsoleServer : MonoBehaviour
             sb.Append("\"logRows\":").Append(SessionLogger.Instance.WrittenCount).Append(',');
             sb.Append("\"participant\":\"").Append(Escape(SessionLogger.Instance.ParticipantId)).Append("\",");
         }
+        float battery = SystemInfo.batteryLevel;   // -1 when unavailable (editor)
+        sb.Append("\"batteryPct\":").Append(battery < 0f ? "-1" : Mathf.RoundToInt(battery * 100f).ToString(CultureInfo.InvariantCulture)).Append(',');
         sb.Append("\"time\":").Append(Time.realtimeSinceStartup.ToString("F1", CultureInfo.InvariantCulture));
         sb.Append('}');
         return sb.ToString();
@@ -374,7 +451,8 @@ async function poll(){
    ['Occlusion',s.occlusion+(s.occluding?' (occluding)':'')],
    ['Scan',s.scanProfile+' @'+s.scanRateHz+'Hz'+(s.scanGated?' (idle >'+s.scanCutoffM+'m)':'')],
    ['Rot solver',s.rotSolver?s.rotSolver+' · tag '+s.tagSizeM+' m':'—'],
-   ['Log rows',s.logRows],['Participant',s.participant]];
+   ['Log rows',s.logRows],['Participant',s.participant],
+   ['Battery',s.batteryPct<0?'&#8212;':s.batteryPct+'%']];
   document.getElementById('grid').innerHTML=rows.map(r=>'<div><b>'+r[0]+'</b></div><div>'+r[1]+'</div>').join('');
   err('');
  }catch(e){err('disconnected');}
