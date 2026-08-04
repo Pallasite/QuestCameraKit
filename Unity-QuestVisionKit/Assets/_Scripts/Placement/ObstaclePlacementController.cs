@@ -390,23 +390,31 @@ public sealed class ObstaclePlacementController : MonoBehaviour
     // ---- placement control (public for chords / web) ----
 
     /// <summary>"Place now": clears the gate for a fresh high-quality window, then places
-    /// on the next stable detection. No-op (with feedback) if already placed.</summary>
-    public void CapturePlacement()
+    /// on the next stable detection. Returns false (with feedback) if already placed —
+    /// callers key success vs refusal feedback off the return.</summary>
+    public bool CapturePlacement()
     {
         if (_placed)
         {
             Hud("Already placed — Recapture first to re-place.");
-            return;
+            return false;
         }
         _solver?.Reset();
         _captureRequested = true;
         Hud("Capturing — hold steady on the tag…");
         Debug.Log("[ObstaclePlacement] CapturePlacement requested.");
+        return true;
     }
 
     /// <summary>Clear the placement; experimenter must Place-now again to re-capture.</summary>
+    public bool Recapture()
+    {
+        ClearPlacement(autoReplace: false);
+        return true;
+    }
+
     [ContextMenu("Recapture (clear placement)")]
-    public void Recapture() => ClearPlacement(autoReplace: false);
+    private void RecaptureFromContextMenu() => Recapture();
 
     private void RecaptureAndReplace() => ClearPlacement(autoReplace: true);
 
@@ -469,16 +477,18 @@ public sealed class ObstaclePlacementController : MonoBehaviour
 
     // ---- runtime config (public for chords / web) ----
 
-    /// <summary>Advance to the next preset in the list (wraps). Re-places if already placed.</summary>
-    public void CyclePreset()
+    /// <summary>Advance to the next preset in the list (wraps). Re-places if already placed.
+    /// Returns false when no presets are configured.</summary>
+    public bool CyclePreset()
     {
         if (presets == null || presets.Length == 0)
         {
             Hud("No presets configured (Inspector list is empty)");
-            return;
+            return false;
         }
         _presetIndex = (_presetIndex + 1) % presets.Length;
         ApplyPreset(presets[_presetIndex]);
+        return true;
     }
 
     /// <summary>Apply a named condition bundle as one action.</summary>

@@ -60,11 +60,33 @@ you: a floating panel always says what to do next.
   to resume. While paused you can also redo, or change the experimental
   condition (**HOLD R-grip + Start**).
 - **Compare pose solvers?** (diagnostic, not part of the protocol) → **PRESS
-  R-grip + Y** cycles the AprilTag rotation solver. The controllers
-  double-buzz; the panel shows "Rot solver: …" whenever it's visible (during
+  R-grip + Y** cycles the AprilTag rotation solver. The LEFT controller
+  double-buzzes; the panel shows "Rot solver: …" whenever it's visible (during
   walks the panel is hidden unless diagnostics are on — the buzz is your
   confirmation). Works without the laptop/web console.
-- Every action buzzes the controllers so you know it registered.
+
+### Reading the buzzes (the panel is hidden during walks — this is your feedback)
+
+The hand that buzzes is the hand whose finger did the action; the number of
+pulses says which action. A **success buzz only ever means the action actually
+happened** — if the system refused (wrong phase, no trial to skip to, etc.)
+you feel one **long dull buzz** instead, never the success pattern.
+
+| You feel | It means |
+|---|---|
+| Buzzing **building up** in one hand | You're mid-hold on that hand's action — keep holding |
+| 1 short **left** | Place request accepted (capturing…) |
+| 2 **long left** | **Obstacle actually placed** |
+| 3 short **left** | Placement cleared (re-place mode) |
+| 2 strong **both** | Trials started (or session reopened from Complete) |
+| 2 short **right** | Redo armed |
+| 3 short **right** | Skipped to next trial |
+| 3 soft **both** | Condition preset changed |
+| 1 **long strong both** | **PAUSED** |
+| 2 short **both** (softer) | Resumed |
+| 3 strong **both**, unprompted | Walker cleared — trial re-armed (after a redo/skip) |
+| 1 long **dull** buzz | **Refused / failed** — check the panel when you can |
+| 1 tiny tick | Hold released early — nothing happened |
 
 ## Watching from the laptop (web console)
 
@@ -88,6 +110,13 @@ over Wi-Fi via the headset's IP, port 8787.
 - When all trials finish, the panel says **"All trials complete — please
   remove the headset."** Take the headset back; the data saved automatically
   (data is saved continuously — even a dead battery only loses the last second).
+- The COMPLETE screen also shows how many trials / redos / skips the session
+  had — jot those in the lab notebook.
+- **Ended early by mistake, or need one more walk?** **HOLD BOTH triggers** on
+  the COMPLETE screen to reopen the session. It comes back **paused** on the
+  last trial with the obstacle still placed — skip to the trial you need
+  (R-grip + RIGHT trigger, or the web console's Prev/Next), then press Start
+  to resume.
 
 ## Per-participant setup (optional, from the computer)
 

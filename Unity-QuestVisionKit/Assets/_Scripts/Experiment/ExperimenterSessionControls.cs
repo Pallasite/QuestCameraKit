@@ -12,6 +12,7 @@ using UnityEngine;
 ///   HOLD L index trigger              Place the obstacle          [Setup]
 ///   HOLD R grip + L index trigger     Recapture (clear placement) [Ready]
 ///   HOLD both index triggers          Start trials                [Ready]
+///   HOLD both index triggers          Reopen session (to Paused)  [Complete]
 ///   HOLD R index trigger              Redo current trial          [Running/Paused]
 ///   HOLD R grip + R index trigger     Skip to next trial          [Running/Paused]
 ///   HOLD R grip + Start (menu)        Cycle condition preset      [Setup/Ready/Paused]
@@ -21,24 +22,39 @@ using UnityEngine;
 ///
 /// The rot-solver cycle is a read-side diagnostic (mirrors the web console's
 /// cycleRotationSolver action — built for labs where the console is
-/// unreachable). Confirmation is the haptic double-pulse: during Running the
-/// HUD canvas is hidden unless diagnostics are on, so the transient may not
-/// be visible.
+/// unreachable).
 ///
 /// Previous-trial has no chord (rarely needed mid-walk; misfire risk next to
 /// Redo) — it lives on the web console (RemoteConsoleServer) only.
 ///
+/// HAPTIC VOCABULARY — during Running the HUD is hidden, so for most of a
+/// session these patterns are the operator's ONLY feedback channel. Rules:
+/// the hold ramp and the confirmation buzz on the hand whose finger acts
+/// (left-hand actions buzz LEFT, right-hand actions buzz RIGHT, session-level
+/// actions buzz BOTH); pulse count separates same-hand actions (Redo = 2R,
+/// Skip = 3R; Recapture = 3L); a REFUSED or FAILED action never gets a
+/// success buzz — it gets one long low-frequency buzz ("nope"), and success
+/// buzzes fire only AFTER the underlying call reports success. Placement
+/// commit ("the obstacle actually appeared") is its own two long left pulses,
+/// distinct from the light request-accepted tick. Pause = one long strong
+/// buzz on both; Resume = two short on both. The clearance re-arm alert
+/// (SessionFlowController) is three strong pulses on both. Full table in
+/// Docs/OperatorQuickstart.md.
+///
 /// Hold mechanics: index-trigger presses group for a short window (so pressing
 /// L then R lands on the both-index action instead of firing Place), then the
-/// resolved action must be held ~0.9 s with escalating haptics and a HUD
-/// progress bar; releasing early cancels. Actions attempted in the wrong phase
-/// show a HUD hint and never start a hold. Destructive/committing actions are
-/// hold-only by design.
+/// resolved action must be held ~0.9 s with escalating haptics on the acting
+/// hand and a HUD progress bar; releasing early cancels with a tiny tick.
+/// Actions attempted in the wrong phase get the refusal buzz + a HUD hint and
+/// never start a hold. Destructive/committing actions are hold-only by design.
 /// </summary>
 [DisallowMultipleComponent]
 public sealed class ExperimenterSessionControls : MonoBehaviour
 {
     private enum HoldAction { None, Place, Recapture, StartTrials, Redo, CyclePreset, NextTrial }
+
+    /// <summary>Which controller(s) a pattern plays on — the hand whose finger acts.</summary>
+    private enum Hand { Left, Right, Both }
 
     [Header("Wiring (auto-resolved if empty)")]
     [SerializeField] private QuestControllerInput input;
@@ -75,6 +91,7 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
     private HoldAction _active = HoldAction.None;
     private float _holdStart;
     private bool _vibrating;
+    private Coroutine _pattern;
 
     private void Awake()
     {
@@ -84,6 +101,21 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
         if (!hud) hud = FindAnyObjectByType<SessionHUD>();
         if (!stereoScanner) stereoScanner = FindAnyObjectByType<StereoAprilTagScanner>();
     }
+
+    private void OnEnable()
+    {
+        // The real "placed" confirmation: CapturePlacement only ACCEPTS the
+        // request (the stable capture lands async), so the commit tick must
+        // not read as "obstacle placed" — this pattern does.
+        if (placement != null) placement.OnPlaced += HandlePlaced;
+    }
+
+    private void OnDisable()
+    {
+        if (placement != null) placement.OnPlaced -= HandlePlaced;
+    }
+
+    private void HandlePlaced() => PlayPattern(Hand.Left, pulses: 2, amplitude: 0.8f, onSeconds: 0.12f, gapSeconds: 0.1f);
 
     private void Update()
     {
@@ -95,7 +127,7 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
         if (input.WasPressedThisFrame(diagnosticsButton) && !mod)
         {
             hud?.ToggleDiagnostics();
-            Pulse(0.4f, 0.04f);
+            PlayPattern(Hand.Right, pulses: 1, amplitude: 0.4f, onSeconds: 0.04f, gapSeconds: 0f);
         }
 
         // R grip + Y: cycle the AprilTag rotation solver. Ungated by phase —
@@ -115,12 +147,24 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
             }
             else if (flow != null && flow.CanPauseResume)
             {
-                flow.TogglePauseResume();
-                Pulse(0.5f, 0.06f);
+                // Pause halts a live trial loop with a participant mid-walkway —
+                // the most safety-relevant action here, so its signature is the
+                // loudest: one long strong buzz. Resume is two short ones.
+                bool pausing = flow.Phase == SessionPhase.Running;
+                if (flow.TogglePauseResume())
+                {
+                    if (pausing) PlayPattern(Hand.Both, pulses: 1, amplitude: 0.9f, onSeconds: 0.35f, gapSeconds: 0f, frequency: 0.5f);
+                    else PlayPattern(Hand.Both, pulses: 2, amplitude: 0.6f, onSeconds: 0.06f, gapSeconds: 0.08f);
+                }
+                else
+                {
+                    RefusalBuzz(Hand.Both);
+                }
             }
             else
             {
                 Hint("Pause is available once trials are running");
+                RefusalBuzz(Hand.Both);
             }
         }
 
@@ -165,6 +209,7 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
         if (!IsActionAllowed(action, out string denyHint))
         {
             Hint(denyHint);
+            RefusalBuzz(HandFor(action));
             return;
         }
 
@@ -187,9 +232,11 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
 
         if (haptics)
         {
+            // Ramp only the acting hand — with the HUD hidden mid-session,
+            // WHERE the buzz is is what tells Redo (R) from Recapture (L)
+            // from Start (both) before the operator has committed anything.
             float amp = t < 0.33f ? 0.15f : t < 0.66f ? 0.35f : 0.6f;
-            OVRInput.SetControllerVibration(1f, amp, OVRInput.Controller.LTouch);
-            OVRInput.SetControllerVibration(1f, amp, OVRInput.Controller.RTouch);
+            SetVibration(HandFor(_active), amp);
             _vibrating = true;
         }
 
@@ -198,10 +245,13 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
 
     private void CancelHold(string reason)
     {
-        if (_active == HoldAction.Place) placement?.EndPlacementPreview();
-        StopVibration();
-        Hint($"{Label(_active)} cancelled ({reason})");
+        var action = _active;
         _active = HoldAction.None;
+        if (action == HoldAction.Place) placement?.EndPlacementPreview();
+        StopVibration();
+        Hint($"{Label(action)} cancelled ({reason})");
+        // Tiny tick ≠ refusal buzz: "you let go" vs "the system said no".
+        PlayPattern(HandFor(action), pulses: 1, amplitude: 0.2f, onSeconds: 0.03f, gapSeconds: 0f);
     }
 
     private void CommitHold()
@@ -215,33 +265,27 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
         {
             if (action == HoldAction.Place) placement?.EndPlacementPreview();
             Hint(denyHint);
+            RefusalBuzz(HandFor(action));
             return;
         }
 
-        DoublePulse();
-
-        switch (action)
+        // Dispatch FIRST; confirm only what actually happened. Every callee
+        // returns whether it acted (and HUDs its own reason when it refused).
+        bool ok = action switch
         {
-            case HoldAction.Place:
-                // Ghost stays visible until the stable capture lands (PlaceInitial ends it).
-                placement?.CapturePlacement();
-                break;
-            case HoldAction.Recapture:
-                placement?.Recapture();
-                break;
-            case HoldAction.StartTrials:
-                flow?.StartTrials();
-                break;
-            case HoldAction.Redo:
-                flow?.RedoTrial();
-                break;
-            case HoldAction.CyclePreset:
-                placement?.CyclePreset();
-                break;
-            case HoldAction.NextTrial:
-                flow?.NextTrial();
-                break;
-        }
+            // Ghost stays visible until the stable capture lands (PlaceInitial ends it).
+            HoldAction.Place => placement != null && placement.CapturePlacement(),
+            HoldAction.Recapture => placement != null && placement.Recapture(),
+            HoldAction.StartTrials => flow != null &&
+                (flow.Phase == SessionPhase.Complete ? flow.LeaveComplete() : flow.StartTrials()),
+            HoldAction.Redo => flow != null && flow.RedoTrial(),
+            HoldAction.CyclePreset => placement != null && placement.CyclePreset(),
+            HoldAction.NextTrial => flow != null && flow.NextTrial(),
+            _ => false,
+        };
+
+        if (ok) PlaySuccessPattern(action);
+        else RefusalBuzz(HandFor(action));
     }
 
     private bool ChordStillHeld(HoldAction action)
@@ -279,7 +323,9 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
                 denyHint = "Re-place is available before trials start";
                 return false;
             case HoldAction.StartTrials:
-                if (flow.CanStartTrials) return true;
+                // The both-index hold doubles as the exit from Complete (the
+                // one phase that used to be terminal): reopens Paused.
+                if (flow.CanStartTrials || flow.CanLeaveComplete) return true;
                 denyHint = flow.Phase == SessionPhase.Setup
                     ? "Place the obstacle first"
                     : "Trials already started";
@@ -301,11 +347,12 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
         }
     }
 
-    private static string Label(HoldAction a) => a switch
+    private string Label(HoldAction a) => a switch
     {
         HoldAction.Place => "Place obstacle",
         HoldAction.Recapture => "Re-place",
-        HoldAction.StartTrials => "Start trials",
+        HoldAction.StartTrials => flow != null && flow.Phase == SessionPhase.Complete
+            ? "Reopen session" : "Start trials",
         HoldAction.Redo => "Redo trial",
         HoldAction.CyclePreset => "Change condition",
         HoldAction.NextTrial => "Next trial",
@@ -313,18 +360,20 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
     };
 
     // Mirrors RemoteConsoleServer's cycleRotationSolver action: cycle, HUD
-    // transient, haptic confirm, and the config_change join-key event so
-    // analysts can attribute apriltag_solver_comparison.csv rows.
+    // transient, haptic confirm (double on the LEFT — Y is a left-controller
+    // button), and the config_change join-key event so analysts can attribute
+    // apriltag_solver_comparison.csv rows.
     private void CycleRotationSolver()
     {
         if (stereoScanner == null)
         {
             Hint("Stereo scanner missing from scene");
+            RefusalBuzz(Hand.Left);
             return;
         }
         var next = stereoScanner.CycleSolver();
         hud?.ShowTransient($"Rot solver: {next}", 3f);
-        DoublePulse();
+        PlayPattern(Hand.Left, pulses: 2, amplitude: 0.4f, onSeconds: 0.05f, gapSeconds: 0.07f);
         SessionLogger.Instance?.Enqueue(LogEvent.SessionEvent(
             "config_change",
             $"rot_solver={next};tag_size_m={stereoScanner.TagSizeMeters.ToString("F3", CultureInfo.InvariantCulture)};reason=set_rot_solver"));
@@ -337,23 +386,75 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
 
     // ---- haptics ----
 
-    private void Pulse(float amplitude, float seconds)
+    private static Hand HandFor(HoldAction a) => a switch
+    {
+        HoldAction.Place => Hand.Left,        // L index
+        HoldAction.Recapture => Hand.Left,    // R grip modifies, L index acts
+        HoldAction.StartTrials => Hand.Both,
+        HoldAction.Redo => Hand.Right,        // R index
+        HoldAction.NextTrial => Hand.Right,   // R grip + R index
+        HoldAction.CyclePreset => Hand.Both,
+        _ => Hand.Both,
+    };
+
+    /// <summary>Success signatures: count + hand per action (see class docs).</summary>
+    private void PlaySuccessPattern(HoldAction action)
+    {
+        switch (action)
+        {
+            case HoldAction.Place:
+                // Light "request accepted" tick; the real placed confirmation
+                // is HandlePlaced's two long left pulses when the capture lands.
+                PlayPattern(Hand.Left, pulses: 1, amplitude: 0.6f, onSeconds: 0.06f, gapSeconds: 0f);
+                break;
+            case HoldAction.Recapture:
+                PlayPattern(Hand.Left, pulses: 3, amplitude: 0.7f, onSeconds: 0.05f, gapSeconds: 0.07f);
+                break;
+            case HoldAction.StartTrials:
+                PlayPattern(Hand.Both, pulses: 2, amplitude: 0.9f, onSeconds: 0.09f, gapSeconds: 0.09f);
+                break;
+            case HoldAction.Redo:
+                PlayPattern(Hand.Right, pulses: 2, amplitude: 0.7f, onSeconds: 0.05f, gapSeconds: 0.07f);
+                break;
+            case HoldAction.NextTrial:
+                PlayPattern(Hand.Right, pulses: 3, amplitude: 0.7f, onSeconds: 0.05f, gapSeconds: 0.07f);
+                break;
+            case HoldAction.CyclePreset:
+                PlayPattern(Hand.Both, pulses: 3, amplitude: 0.5f, onSeconds: 0.05f, gapSeconds: 0.09f);
+                break;
+        }
+    }
+
+    /// <summary>One long low-frequency buzz: refused or failed. Never confused
+    /// with a success pattern (those are short, full-frequency, 1-3 pulses).</summary>
+    private void RefusalBuzz(Hand hand)
+        => PlayPattern(hand, pulses: 1, amplitude: 0.35f, onSeconds: 0.4f, gapSeconds: 0f, frequency: 0.3f);
+
+    private void PlayPattern(Hand hand, int pulses, float amplitude, float onSeconds, float gapSeconds, float frequency = 1f)
     {
         if (!haptics) return;
-        OVRInput.SetControllerVibration(1f, amplitude, OVRInput.Controller.LTouch);
-        OVRInput.SetControllerVibration(1f, amplitude, OVRInput.Controller.RTouch);
-        _vibrating = true;
-        CancelInvoke(nameof(StopVibration));
-        Invoke(nameof(StopVibration), seconds);
+        if (_pattern != null) StopCoroutine(_pattern);
+        _pattern = StartCoroutine(PatternCo(hand, pulses, amplitude, onSeconds, gapSeconds, frequency));
     }
 
-    private void DoublePulse()
+    private System.Collections.IEnumerator PatternCo(Hand hand, int pulses, float amplitude, float onSeconds, float gapSeconds, float frequency)
     {
-        Pulse(0.7f, 0.05f);
-        Invoke(nameof(SecondPulse), 0.12f);
+        for (int i = 0; i < pulses; i++)
+        {
+            SetVibration(hand, amplitude, frequency);
+            _vibrating = true;
+            yield return new WaitForSecondsRealtime(onSeconds);
+            StopVibration();
+            if (i < pulses - 1) yield return new WaitForSecondsRealtime(gapSeconds);
+        }
+        _pattern = null;
     }
 
-    private void SecondPulse() => Pulse(0.7f, 0.05f);
+    private static void SetVibration(Hand hand, float amplitude, float frequency = 1f)
+    {
+        if (hand != Hand.Right) OVRInput.SetControllerVibration(frequency, amplitude, OVRInput.Controller.LTouch);
+        if (hand != Hand.Left) OVRInput.SetControllerVibration(frequency, amplitude, OVRInput.Controller.RTouch);
+    }
 
     private void StopVibration()
     {

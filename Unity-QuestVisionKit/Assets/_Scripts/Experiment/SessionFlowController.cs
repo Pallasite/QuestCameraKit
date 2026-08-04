@@ -64,6 +64,12 @@ public sealed class SessionFlowController : MonoBehaviour
     public bool CanPauseResume => Phase == SessionPhase.Running || Phase == SessionPhase.Paused;
     public bool CanChangeConfig => Phase == SessionPhase.Setup || Phase == SessionPhase.Ready || Phase == SessionPhase.Paused;
     public bool IsPaused => Phase == SessionPhase.Paused;
+    public bool CanLeaveComplete => Phase == SessionPhase.Complete;
+
+    /// <summary>Manual redos this session (HUD status counter).</summary>
+    public int RedoCount { get; private set; }
+    /// <summary>Manual trial jumps (next/previous) this session (HUD status counter).</summary>
+    public int SkipCount { get; private set; }
 
     /// <summary>True while a Running-phase redo is waiting for the walker to clear the trigger radius.</summary>
     public bool WaitingForRedoClearance => _waitingForRedoClearance;
@@ -134,43 +140,71 @@ public sealed class SessionFlowController : MonoBehaviour
 
     // ---- public actions ----
 
-    /// <summary>Ready -> Running. The explicit gate that arms the trial loop.</summary>
-    public void StartTrials()
+    /// <summary>Ready -> Running. The explicit gate that arms the trial loop.
+    /// Returns false (with a HUD hint) when refused — callers use the return
+    /// to pick success vs refusal feedback, so it must reflect what happened.</summary>
+    public bool StartTrials()
     {
         if (Phase != SessionPhase.Ready)
         {
             Hud(Phase == SessionPhase.Setup ? "Place the obstacle first" : "Trials already started");
-            return;
+            return false;
         }
-        if (obstacleController == null) return;
+        if (obstacleController == null) return false;
 
         obstacleController.AutoReset = true;
         obstacleController.TrialSequenceActive = true;
         obstacleController.ArmObstacle();
         TransitionTo(SessionPhase.Running, "start_trials");
+        return true;
     }
 
     /// <summary>Running -> Paused: disarm so nothing triggers/resets/advances.</summary>
-    public void Pause()
+    public bool Pause()
     {
-        if (Phase != SessionPhase.Running) return;
+        if (Phase != SessionPhase.Running) return false;
         _waitingForRedoClearance = false;
         obstacleController?.DisarmObstacle();
         TransitionTo(SessionPhase.Paused, "pause");
+        return true;
     }
 
     /// <summary>Paused -> Running: re-arm.</summary>
-    public void Resume()
+    public bool Resume()
     {
-        if (Phase != SessionPhase.Paused) return;
+        if (Phase != SessionPhase.Paused) return false;
         obstacleController?.ArmObstacle();
         TransitionTo(SessionPhase.Running, "resume");
+        return true;
     }
 
-    public void TogglePauseResume()
+    public bool TogglePauseResume()
     {
-        if (Phase == SessionPhase.Running) Pause();
-        else if (Phase == SessionPhase.Paused) Resume();
+        if (Phase == SessionPhase.Running) return Pause();
+        if (Phase == SessionPhase.Paused) return Resume();
+        return false;
+    }
+
+    /// <summary>
+    /// Complete -> Paused. Field test: Complete was a terminal state — a CSV
+    /// numbering hole that fired sequence-complete early, or a legitimately
+    /// finished session that needed one more walk, both required killing the
+    /// app (losing placement). Reopens DISARMED with the last trial in the CSV
+    /// loaded, so the operator can navigate trials and Resume deliberately.
+    /// </summary>
+    public bool LeaveComplete()
+    {
+        if (Phase != SessionPhase.Complete) return false;
+        if (trialSequencer == null || obstacleController == null || trialLoader == null) return false;
+        if (!trialSequencer.JumpToTrial(trialLoader.MaxTrialNumber)) return false;
+
+        // JumpToTrial's ResetForRedo re-arms; Paused must stay disarmed.
+        obstacleController.DisarmObstacle();
+        obstacleController.TrialSequenceActive = true;
+        _waitingForRedoClearance = false;
+        TransitionTo(SessionPhase.Paused, "leave_complete");
+        Hud($"Reopened at trial {trialLoader.MaxTrialNumber} — paused. Navigate trials, then Start to resume.", 5f);
+        return true;
     }
 
     /// <summary>
@@ -178,14 +212,14 @@ public sealed class SessionFlowController : MonoBehaviour
     /// stays disarmed while Paused; while Running, waits for trigger-radius
     /// clearance before re-arming (see class docs).
     /// </summary>
-    public void RedoTrial()
+    public bool RedoTrial()
     {
         if (!CanRedo)
         {
             Hud("Redo is available once trials are running");
-            return;
+            return false;
         }
-        if (trialSequencer == null || obstacleController == null) return;
+        if (trialSequencer == null || obstacleController == null) return false;
 
         int index = trialSequencer.CurrentTrialIndex;
         trialSequencer.RedoCurrentTrial();  // resets pivot + re-arms + reloads the same condition
@@ -207,34 +241,42 @@ public sealed class SessionFlowController : MonoBehaviour
             Hud($"Trial {index} re-armed");
         }
 
+        RedoCount++;
         Log("trial_redo", $"index={index};phase={Phase}");
+        return true;
     }
 
     /// <summary>Skip forward to the next trial without completing the current walk.</summary>
-    public void NextTrial() => JumpBy(+1);
+    public bool NextTrial() => JumpBy(+1);
 
     /// <summary>Step back to the previous trial (e.g. to re-run an earlier condition).</summary>
-    public void PreviousTrial() => JumpBy(-1);
+    public bool PreviousTrial() => JumpBy(-1);
 
     // Manual trial navigation. Field test: the only way to advance was a
     // completed walk, and there was no way back at all. Same availability and
     // post-load gating as RedoTrial: never armed while Paused; while Running,
     // wait for the walker to clear the trigger radius before re-arming.
-    private void JumpBy(int delta)
+    // Steps to the nearest EXISTING trial number in the chosen direction, so a
+    // numbering gap in the CSV can't wall off the rest of the sequence.
+    private bool JumpBy(int delta)
     {
         if (!CanRedo)
         {
             Hud("Trial navigation is available once trials are running");
-            return;
+            return false;
         }
-        if (trialSequencer == null || obstacleController == null) return;
+        if (trialSequencer == null || obstacleController == null) return false;
 
         int from = trialSequencer.CurrentTrialIndex;
-        int to = from + delta;
+        if (!trialSequencer.TryGetAdjacentTrial(from, delta, out int to))
+        {
+            Hud(delta > 0 ? $"No trial after {from} in the CSV" : $"No trial before {from} in the CSV");
+            return false;
+        }
         if (!trialSequencer.JumpToTrial(to))
         {
             Hud($"No trial {to} in the CSV");
-            return;
+            return false;
         }
 
         if (Phase == SessionPhase.Paused)
@@ -253,7 +295,9 @@ public sealed class SessionFlowController : MonoBehaviour
             Hud($"Trial {to} armed");
         }
 
+        SkipCount++;
         Log("trial_skip", $"from={from};to={to};phase={Phase}");
+        return true;
     }
 
     // ---- event handlers ----
@@ -341,11 +385,25 @@ public sealed class SessionFlowController : MonoBehaviour
         _hud?.ShowTransient(msg, seconds);
     }
 
+    // Re-arm signature: three strong pulses on BOTH hands. Deliberately unlike
+    // any of the controls surface's per-action patterns (those are 1-3 pulses
+    // on the acting hand only) — this is the one unsolicited buzz in the
+    // system, and mid-walk it is the operator's only channel.
     private void PulseControllers()
     {
-        OVRInput.SetControllerVibration(1f, 0.6f, OVRInput.Controller.LTouch);
-        OVRInput.SetControllerVibration(1f, 0.6f, OVRInput.Controller.RTouch);
-        Invoke(nameof(StopControllerVibration), 0.08f);
+        StartCoroutine(RearmPulseCo());
+    }
+
+    private System.Collections.IEnumerator RearmPulseCo()
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            OVRInput.SetControllerVibration(1f, 0.7f, OVRInput.Controller.LTouch);
+            OVRInput.SetControllerVibration(1f, 0.7f, OVRInput.Controller.RTouch);
+            yield return new WaitForSecondsRealtime(0.08f);
+            StopControllerVibration();
+            if (i < 2) yield return new WaitForSecondsRealtime(0.1f);
+        }
     }
 
     private void StopControllerVibration()

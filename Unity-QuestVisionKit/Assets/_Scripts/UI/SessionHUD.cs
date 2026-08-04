@@ -163,7 +163,19 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
 
         if (_sequencer != null && _loader != null && !_loader.MissingData)
         {
-            _sb.Append("  ·  Trial ").Append(_sequencer.CurrentTrialIndex);
+            // Position within the sequence, robust to 0- or 1-based CSVs
+            // (position = index relative to the file's lowest trial number).
+            int pos = _sequencer.CurrentTrialIndex - _loader.MinTrialNumber + 1;
+            _sb.Append("  ·  Trial ").Append(Mathf.Clamp(pos, 1, _loader.TrialCount))
+               .Append('/').Append(_loader.TrialCount);
+        }
+
+        _sb.Append("  ·  ").Append(FormatElapsed(Time.realtimeSinceStartup));
+
+        if (_flow != null && (_flow.RedoCount > 0 || _flow.SkipCount > 0))
+        {
+            _sb.Append("  ·  redo ").Append(_flow.RedoCount)
+               .Append(" · skip ").Append(_flow.SkipCount);
         }
 
         if (_placement != null)
@@ -178,6 +190,12 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
             _sb.Append("  ·  <color=").Append(ExperimentPalette.MidHex).Append(">clearing…</color>");
 
         return _sb.ToString();
+    }
+
+    private static string FormatElapsed(float seconds)
+    {
+        int m = Mathf.FloorToInt(seconds / 60f);
+        return m < 60 ? $"{m}m" : $"{m / 60}h{m % 60:00}m";
     }
 
     private string BuildGuidance(SessionPhase phase)
@@ -249,7 +267,17 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
                 break;
 
             case SessionPhase.Complete:
-                _sb.Append("<b>All trials complete.</b>\nPlease remove the headset.");
+                _sb.Append("<b>All trials complete.</b>");
+                if (_loader != null && !_loader.MissingData)
+                {
+                    _sb.Append("  ").Append(_loader.TrialCount).Append(" trials");
+                    if (_flow != null && (_flow.RedoCount > 0 || _flow.SkipCount > 0))
+                        _sb.Append(" · ").Append(_flow.RedoCount).Append(" redos · ")
+                           .Append(_flow.SkipCount).Append(" skips");
+                    _sb.Append('.');
+                }
+                _sb.Append("\nPlease remove the headset.\n")
+                   .Append("<size=80%>Ended early or need another walk? HOLD BOTH triggers to reopen (paused).</size>");
                 break;
         }
         return _sb.ToString();

@@ -107,6 +107,30 @@ public class TrialSequencer : MonoBehaviour
     }
 
     /// <summary>
+    /// Nearest trial number that exists in the CSV strictly beyond
+    /// <paramref name="fromIndex"/> in <paramref name="direction"/> (+1/-1).
+    /// Lets manual navigation step OVER numbering gaps instead of getting
+    /// stuck at a hole. False when none exists in that direction.
+    /// </summary>
+    public bool TryGetAdjacentTrial(int fromIndex, int direction, out int index)
+    {
+        index = 0;
+        if (trialLoader == null || trialLoader.MissingData) return false;
+
+        bool found = false;
+        foreach (int key in trialLoader.TrialConditions.Keys)
+        {
+            if (direction > 0 ? key <= fromIndex : key >= fromIndex) continue;
+            if (!found || (direction > 0 ? key < index : key > index))
+            {
+                index = key;
+                found = true;
+            }
+        }
+        return found;
+    }
+
+    /// <summary>
     /// Load a specific trial by index. If the index is out of range,
     /// fires <see cref="OnSequenceComplete"/>.
     /// </summary>

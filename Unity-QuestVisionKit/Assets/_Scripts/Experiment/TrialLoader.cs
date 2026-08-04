@@ -34,6 +34,14 @@ public class TrialLoader : MonoBehaviour
     /// <summary>Number of trials successfully parsed.</summary>
     public int TrialCount => TrialConditions.Count;
 
+    /// <summary>Lowest trial number in the CSV (0 when none loaded). The HUD's
+    /// "Trial N/M" position is computed against this, so 0- and 1-based files
+    /// both display naturally.</summary>
+    public int MinTrialNumber { get; private set; }
+
+    /// <summary>Highest trial number in the CSV (0 when none loaded).</summary>
+    public int MaxTrialNumber { get; private set; }
+
     /// <summary>True if the CSV file could not be found or parsed.</summary>
     public bool MissingData { get; private set; } = true;
 
@@ -191,6 +199,13 @@ public class TrialLoader : MonoBehaviour
 
         if (parsed > 0)
         {
+            MinTrialNumber = int.MaxValue;
+            MaxTrialNumber = int.MinValue;
+            foreach (int key in TrialConditions.Keys)
+            {
+                if (key < MinTrialNumber) MinTrialNumber = key;
+                if (key > MaxTrialNumber) MaxTrialNumber = key;
+            }
             MissingData = false;
             OnDataLoaded?.Invoke();
         }
