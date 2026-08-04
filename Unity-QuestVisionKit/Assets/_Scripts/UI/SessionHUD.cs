@@ -332,9 +332,18 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
         }
         if (SessionLogger.Instance != null)
         {
-            _sb.Append("\nlog: ").Append(SessionLogger.Instance.IsRunning ? "running" : "<color=" + ExperimentPalette.BadHex + ">STOPPED</color>")
-               .Append(" · ").Append(SessionLogger.Instance.WrittenCount).Append('/')
-               .Append(SessionLogger.Instance.EnqueuedCount).Append(" rows");
+            var log = SessionLogger.Instance;
+            // WriterHealthy, not IsRunning: IsRunning goes true before the
+            // writer touches the disk, so it can read "running" all session
+            // while nothing is written.
+            string state = !log.IsRunning
+                ? "<color=" + ExperimentPalette.BadHex + ">STOPPED</color>"
+                : log.WriterHealthy
+                    ? "running"
+                    : "<color=" + ExperimentPalette.BadHex + ">WRITE FAILING</color>";
+            _sb.Append("\nlog: ").Append(state)
+               .Append(" · ").Append(log.WrittenCount).Append('/')
+               .Append(log.EnqueuedCount).Append(" rows");
         }
         return _sb.ToString();
     }

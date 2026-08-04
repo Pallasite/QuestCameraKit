@@ -357,7 +357,10 @@ public sealed class ObstaclePlacementController : MonoBehaviour
             case VisualUpdatePolicy.Deferred:
                 _pendingProposed = proposed;
                 _hasPending = true;
-                _pendingSetTime = Time.time;
+                // Wall clock, not Time.time: game time freezes across an app
+                // suspend (headset doffed for a break), which let a pre-break
+                // proposal apply as "fresh" minutes later.
+                _pendingSetTime = Time.realtimeSinceStartup;
                 break;
         }
 
@@ -616,7 +619,7 @@ public sealed class ObstaclePlacementController : MonoBehaviour
     {
         if (!_placed || visualPolicy != VisualUpdatePolicy.Deferred || !_hasPending) return;
 
-        float age = Time.time - _pendingSetTime;
+        float age = Time.realtimeSinceStartup - _pendingSetTime;
         if (age > pendingProposalMaxAgeSeconds)
         {
             // Tag hasn't been seen recently — the held proposal is stale

@@ -56,6 +56,7 @@ public sealed class SessionLogger : MonoBehaviour
     private readonly ConcurrentQueue<LogEvent> _queue = new ConcurrentQueue<LogEvent>();
     private Thread _writerThread;
     private volatile bool _running;
+    private volatile bool _writerHealthy;
     private volatile bool _flushRequested;
     private string _resolvedPath;
     private string _participantSource = "inspector";
@@ -69,6 +70,16 @@ public sealed class SessionLogger : MonoBehaviour
     public long EnqueuedCount => Interlocked.Read(ref _enqueuedCount);
     public long WrittenCount => Interlocked.Read(ref _writtenCount);
     public bool IsRunning => _running;
+
+    /// <summary>
+    /// True only once the writer thread has successfully opened the CSV and
+    /// written the header; false again (sticky) after a flush/loop failure
+    /// (e.g. disk full). <see cref="IsRunning"/> is NOT a health signal — it
+    /// goes true before the writer ever touches the disk, so a session could
+    /// report "running" for 90 minutes while writing nothing. Health surfaces
+    /// (HUD diagnostics, heartbeat) must read this.
+    /// </summary>
+    public bool WriterHealthy => _writerHealthy;
     public string ParticipantId => participantId;
 
     /// <summary>Main-thread entry point. Drops the event if the writer isn't running.</summary>
@@ -93,6 +104,11 @@ public sealed class SessionLogger : MonoBehaviour
 
     private void OnEnable()
     {
+        // Awake's duplicate Destroy(this) is deferred to end of frame, so the
+        // duplicate's OnEnable still runs — without this guard it opened a
+        // second CSV alongside the singleton's.
+        if (Instance != this) return;
+
         if (!enableLogging)
         {
             Debug.Log("[SessionLogger] enableLogging is false; logger inactive.");
@@ -222,11 +238,16 @@ public sealed class SessionLogger : MonoBehaviour
             writer = new StreamWriter(_resolvedPath, append: false, Encoding.UTF8);
             writer.WriteLine(LogEvent.CsvHeader);
             writer.Flush();
+            _writerHealthy = true;
         }
         catch (Exception e)
         {
-            // Unity's Debug.Log is thread-safe (queued to main thread).
-            Debug.LogWarning($"[SessionLogger] Writer thread open failed (swallowed): {e.Message}");
+            // Unity's Debug.Log is thread-safe (queued to main thread). Loud,
+            // not swallowed-quiet: with the writer dead the whole session
+            // produces no CSV, and WriterHealthy stays false so the HUD and
+            // heartbeat can show it.
+            Debug.LogError($"[SessionLogger] Writer thread could not open the CSV — NO EXPERIMENT DATA " +
+                           $"is being written this session: {e.Message}");
             try { writer?.Dispose(); } catch { }
             return;
         }
@@ -256,10 +277,17 @@ public sealed class SessionLogger : MonoBehaviour
                     }
                 }
 
-                if (_flushRequested || (wroteAny && (DateTime.UtcNow - lastFlush) >= flushSpan))
+                // Unconditional timed flush (not gated on wroteAny): flushing a
+                // clean stream is near-free, and the gate meant a quiet stretch
+                // could hold earlier rows unflushed past the promised window.
+                if (_flushRequested || (DateTime.UtcNow - lastFlush) >= flushSpan)
                 {
                     try { writer.Flush(); }
-                    catch (Exception ex) { Debug.LogWarning($"[SessionLogger] Flush exception (swallowed): {ex.Message}"); }
+                    catch (Exception ex)
+                    {
+                        _writerHealthy = false;   // disk full / io error — surface it
+                        Debug.LogWarning($"[SessionLogger] Flush exception (swallowed): {ex.Message}");
+                    }
                     lastFlush = DateTime.UtcNow;
                     // Only acknowledge the forced flush once the queue is truly
                     // drained — an event enqueued between the dequeue loop and
@@ -273,6 +301,7 @@ public sealed class SessionLogger : MonoBehaviour
         }
         catch (Exception e)
         {
+            _writerHealthy = false;
             Debug.LogWarning($"[SessionLogger] Writer loop exception (swallowed): {e.Message}");
         }
         finally

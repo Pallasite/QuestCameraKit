@@ -383,6 +383,7 @@ public sealed class RemoteConsoleServer : MonoBehaviour
         if (SessionLogger.Instance != null)
         {
             sb.Append("\"logRunning\":").Append(SessionLogger.Instance.IsRunning ? "true" : "false").Append(',');
+            sb.Append("\"logHealthy\":").Append(SessionLogger.Instance.WriterHealthy ? "true" : "false").Append(',');
             sb.Append("\"logRows\":").Append(SessionLogger.Instance.WrittenCount).Append(',');
             sb.Append("\"participant\":\"").Append(Escape(SessionLogger.Instance.ParticipantId)).Append("\",");
         }

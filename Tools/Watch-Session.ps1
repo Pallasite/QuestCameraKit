@@ -61,6 +61,7 @@ Write-Host "Waiting for [SessionHeartbeat] lines (Ctrl+C to stop)..."
     } else { '?' }
     $batt = if ($null -ne $s.batteryPct -and $s.batteryPct -ge 0) { "$($s.batteryPct)%" } else { '?' }
     $lg = if ($null -ne $s.logRows) { $s.logRows } else { '?' }
+    if ($s.logHealthy -eq $false) { $lg = "$lg(LOG-FAIL)" }
 
     $line = "phase=$($s.phase) trial=$($s.trial) placed=$($s.placed) anchor=$($s.anchor) tag=$tag corr=$($s.lastCorrectionMm)mm occl=$($s.occlusion) rows=$lg batt=$batt t=$($s.time)s"
 

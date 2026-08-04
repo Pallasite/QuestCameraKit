@@ -314,6 +314,7 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
         {
             return Array.Empty<AprilTagResult>();
         }
+        if (ReadbacksStillPending()) return Array.Empty<AprilTagResult>();
 
         _isScanning = true;
         try
@@ -351,6 +352,7 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
         {
             return Array.Empty<AprilTagResult>();
         }
+        if (ReadbacksStillPending()) return Array.Empty<AprilTagResult>();
 
         _isScanning = true;
         try
@@ -441,10 +443,34 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
 
         var leftPixelsTask = ReadPixelsIntoCacheAsync(_leftDownsampled, leftEye: true);
         var rightPixelsTask = ReadPixelsIntoCacheAsync(_rightDownsampled, leftEye: false);
-        await Task.WhenAll(leftPixelsTask, rightPixelsTask);
 
-        var leftPixels = leftPixelsTask.Result;
-        var rightPixels = rightPixelsTask.Result;
+        // A readback that never calls back (driver stall, suspend mid-request)
+        // used to hang this await forever, leaving _isScanning latched and
+        // detection silently dead for the rest of the session. Same timeout
+        // budget as AcquirePairAsync; on timeout this scan is skipped and new
+        // scans hold off (ReadbacksStillPending) until the stale request
+        // resolves — at which point scanning resumes on its own.
+        var readbacks = Task.WhenAll(leftPixelsTask, rightPixelsTask);
+        var winner = await Task.WhenAny(readbacks, Task.Delay(TimeSpan.FromSeconds(acquireTimeoutSeconds)));
+        if (winner != readbacks)
+        {
+            Debug.LogWarning($"[StereoAprilTagScanner] GPU readback timed out after {acquireTimeoutSeconds}s — " +
+                             "scan skipped; new scans wait for the stale readback to resolve.");
+            return Array.Empty<AprilTagResult>();
+        }
+
+        Color32[] leftPixels, rightPixels;
+        try
+        {
+            await readbacks;   // surfaces a hasError readback as a catchable exception
+            leftPixels = leftPixelsTask.Result;
+            rightPixels = rightPixelsTask.Result;
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[StereoAprilTagScanner] GPU readback failed (scan skipped): {e.Message}");
+            return Array.Empty<AprilTagResult>();
+        }
         if (leftPixels == null || rightPixels == null || leftPixels.Length == 0 || rightPixels.Length == 0)
         {
             return Array.Empty<AprilTagResult>();
@@ -1484,20 +1510,42 @@ public class StereoAprilTagScanner : MonoBehaviour, IAprilTagScanner
         var tcs = new TaskCompletionSource<Color32[]>();
         Action<AsyncGPUReadbackRequest> onDone = request =>
         {
+            Interlocked.Decrement(ref _pendingReadbacks);
             if (request.hasError)
             {
-                tcs.SetException(new Exception("[StereoAprilTagScanner] GPU readback error."));
+                tcs.TrySetException(new Exception("[StereoAprilTagScanner] GPU readback error."));
                 return;
             }
             var native = leftEye ? _leftReadback : _rightReadback;
             var cache = leftEye ? _leftPixelCache : _rightPixelCache;
             native.CopyTo(cache);
-            tcs.SetResult(cache);
+            tcs.TrySetResult(cache);
         };
+        Interlocked.Increment(ref _pendingReadbacks);
         if (leftEye)
             AsyncGPUReadback.RequestIntoNativeArray(ref _leftReadback, rt, 0, TextureFormat.RGBA32, onDone);
         else
             AsyncGPUReadback.RequestIntoNativeArray(ref _rightReadback, rt, 0, TextureFormat.RGBA32, onDone);
         return tcs.Task;
+    }
+
+    // In-flight AsyncGPUReadback requests. Nonzero after a readback timeout
+    // means a stale request still owns the persistent NativeArrays: starting
+    // another readback into them (or letting EnsureResources dispose them)
+    // would race native memory. Scans skip until the count returns to zero;
+    // the rate-limited warning keeps the wedge from ever being silent.
+    private int _pendingReadbacks;
+    private float _nextReadbackWedgeWarn;
+
+    private bool ReadbacksStillPending()
+    {
+        if (Interlocked.CompareExchange(ref _pendingReadbacks, 0, 0) == 0) return false;
+        if (Time.realtimeSinceStartup >= _nextReadbackWedgeWarn)
+        {
+            _nextReadbackWedgeWarn = Time.realtimeSinceStartup + 5f;
+            Debug.LogWarning("[StereoAprilTagScanner] Scan skipped: a GPU readback from an earlier scan " +
+                             "is still pending. Detection resumes automatically when it resolves.");
+        }
+        return true;
     }
 }
