@@ -236,6 +236,21 @@ console-free path to solver cycling.
   depth manager is missing/None so this can never fail silently again.
   **Fallback knob**: soft occlusion has standing GPU cost — if 90 fps doesn't
   hold, set `_occlusionShadersMode = 1` (HardOcclusion; harder edges, cheaper).
+- **FOLLOW-UP (same day): obstacle fully invisible after placement** once the
+  depth manager went live. Root cause: the "never occlude" twin
+  (`No Occlusion Lit Green.mat`) used the OCCLUSION shadergraph with
+  `_EnvironmentDepthBias = 1` — a trick that zeroes the fragment's depth.
+  Under HARD occlusion that reads "always in front" (why the trick was
+  believed); under SOFT occlusion the shader divides by that zero
+  (`EnvironmentOcclusion.cginc` L56) → NaN alpha → the obstacle (and the
+  placement ghost, which bakes the same material) renders INVISIBLE
+  everywhere. **The bias=1 "fully defeats the depth test" claim from the
+  2026-07-14 pass is FALSE under SoftOcclusion — do not resurrect it.**
+  Fixed properly: the twin is retargeted to `Meta/Lit` (the same
+  occlusion-free shader `No Occlusion Lit Purple.mat` already uses), keeping
+  the same green. No depth-bias values are manipulated anywhere now; the
+  occluding material keeps its stock 0.06. A material with no environment-
+  depth code path is structurally immune regardless of occlusion mode.
 - **90→60-70 fps near the obstacle during trials** — the scan distance gate
   opens at ~2.57 m and each 8 Hz scan ran BOTH eyes' native AprilTag detection
   + grayscale conversion synchronously on the main thread in one frame, plus
