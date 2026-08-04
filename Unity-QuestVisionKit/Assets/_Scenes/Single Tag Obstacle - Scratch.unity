@@ -302,6 +302,11 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &254014880 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 1430746637443730564, guid: 15794fbcd7a75b04d9d4ee98c74d08eb, type: 3}
+  m_PrefabInstance: {fileID: 1069611703}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &259649014
 GameObject:
   m_ObjectHideFlags: 0
@@ -390,12 +395,36 @@ PrefabInstance:
     m_TransformParent: {fileID: 0}
     m_Modifications:
     - target: {fileID: 6033049460946740, guid: e208b6817bf9311489aa80419d384fbd, type: 3}
+      propertyPath: markerPool
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 6033049460946740, guid: e208b6817bf9311489aa80419d384fbd, type: 3}
       propertyPath: markerDisplayMode
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 31299415333935468, guid: e208b6817bf9311489aa80419d384fbd, type: 3}
+      propertyPath: residualQualityGradient.key0.b
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 31299415333935468, guid: e208b6817bf9311489aa80419d384fbd, type: 3}
+      propertyPath: residualQualityGradient.key0.r
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 31299415333935468, guid: e208b6817bf9311489aa80419d384fbd, type: 3}
+      propertyPath: residualQualityGradient.key2.b
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 31299415333935468, guid: e208b6817bf9311489aa80419d384fbd, type: 3}
+      propertyPath: residualQualityGradient.key2.g
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 2053625363347814627, guid: e208b6817bf9311489aa80419d384fbd, type: 3}
       propertyPath: m_Name
       value: April Tags Logic and Managers
+      objectReference: {fileID: 0}
+    - target: {fileID: 2439007242928577210, guid: e208b6817bf9311489aa80419d384fbd, type: 3}
+      propertyPath: rotationSolver
+      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 7120217153661797652, guid: e208b6817bf9311489aa80419d384fbd, type: 3}
       propertyPath: m_LocalPosition.x
@@ -612,6 +641,54 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &951979870
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 951979872}
+  - component: {fileID: 951979871}
+  m_Layer: 0
+  m_Name: '[BuildingBlock] Occlusion Dependencies'
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &951979871
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 951979870}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 71a155ece80369d4e99bdaf5e59169b5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Meta.XR.EnvironmentDepth::Meta.XR.EnvironmentDepth.EnvironmentDepthManager
+  _occlusionShadersMode: 2
+  _removeHands: 0
+  CustomTrackingSpace: {fileID: 0}
+  <MaskMeshFilters>k__BackingField: []
+--- !u!4 &951979872
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 951979870}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &1069611703
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -624,10 +701,42 @@ PrefabInstance:
       propertyPath: m_Name
       value: Session HUD
       objectReference: {fileID: 0}
+    - target: {fileID: 1430746637443730564, guid: 15794fbcd7a75b04d9d4ee98c74d08eb, type: 3}
+      propertyPath: m_Layer
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 1657908886576320889, guid: 15794fbcd7a75b04d9d4ee98c74d08eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292467161
+      objectReference: {fileID: 0}
+    - target: {fileID: 2911676824269354118, guid: 15794fbcd7a75b04d9d4ee98c74d08eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4284933887
+      objectReference: {fileID: 0}
+    - target: {fileID: 3001706211314724260, guid: 15794fbcd7a75b04d9d4ee98c74d08eb, type: 3}
+      propertyPath: m_Layer
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 3309809599349431481, guid: 15794fbcd7a75b04d9d4ee98c74d08eb, type: 3}
+      propertyPath: m_Layer
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 3466910484051223100, guid: 15794fbcd7a75b04d9d4ee98c74d08eb, type: 3}
+      propertyPath: followDistanceMeters
+      value: 0.75
+      objectReference: {fileID: 0}
+    - target: {fileID: 4003635494230250383, guid: 15794fbcd7a75b04d9d4ee98c74d08eb, type: 3}
+      propertyPath: m_Layer
+      value: 3
+      objectReference: {fileID: 0}
     - target: {fileID: 4619987176724338985, guid: 15794fbcd7a75b04d9d4ee98c74d08eb, type: 3}
       propertyPath: obstacleController
       value: 
       objectReference: {fileID: 112548698}
+    - target: {fileID: 5424690316078533248, guid: 15794fbcd7a75b04d9d4ee98c74d08eb, type: 3}
+      propertyPath: m_Layer
+      value: 3
+      objectReference: {fileID: 0}
     - target: {fileID: 7573450296388145784, guid: 15794fbcd7a75b04d9d4ee98c74d08eb, type: 3}
       propertyPath: m_Pivot.x
       value: 0.5
@@ -711,19 +820,55 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 1430746637443730564, guid: 15794fbcd7a75b04d9d4ee98c74d08eb, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1069611709}
   m_SourcePrefab: {fileID: 100100000, guid: 15794fbcd7a75b04d9d4ee98c74d08eb, type: 3}
 --- !u!114 &1069611704 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 3962277235402498526, guid: 15794fbcd7a75b04d9d4ee98c74d08eb, type: 3}
   m_PrefabInstance: {fileID: 1069611703}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
+  m_GameObject: {fileID: 254014880}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 7b9745adf128a2b4582c212158eb9656, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SessionHUD
+--- !u!224 &1069611705 stripped
+RectTransform:
+  m_CorrespondingSourceObject: {fileID: 7573450296388145784, guid: 15794fbcd7a75b04d9d4ee98c74d08eb, type: 3}
+  m_PrefabInstance: {fileID: 1069611703}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1069611709
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 254014880}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ee10491ef6d5d1d49a270cf6b09bdc19, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Oculus.VR::OVROverlayCanvas
+  _enableMipmapping: 0
+  _dynamicResolution: 1
+  _redrawResolutionThreshold: 2147483647
+  rectTransform: {fileID: 1069611705}
+  maxTextureSize: 2048
+  manualRedraw: 0
+  renderInterval: 1
+  renderIntervalFrameOffset: 0
+  expensive: 0
+  layer: 5
+  opacity: 2
+  shape: 0
+  curveRadius: 1
+  overlapMask: 0
+  overlayType: 1
+  _overlayEnabled: 1
 --- !u!1 &1146725258
 GameObject:
   m_ObjectHideFlags: 0
@@ -762,11 +907,13 @@ MonoBehaviour:
   flow: {fileID: 1146725263}
   placement: {fileID: 1146725261}
   hud: {fileID: 1069611704}
+  stereoScanner: {fileID: 0}
   modifier: 4194304
   leftIndex: 8192
   rightIndex: 2097152
   menuButton: 256
   diagnosticsButton: 8388608
+  cycleSolverButton: 8
   holdSeconds: 0.9
   chordGroupingSeconds: 0.15
   haptics: 1
@@ -786,6 +933,8 @@ MonoBehaviour:
   obstaclePrefab: {fileID: 5770893990329113263, guid: c1066bdbdc55a0c45a75cc6691eb62af, type: 3}
   obstacleController: {fileID: 112548698}
   finesseController: {fileID: 112548702}
+  stereoScanner: {fileID: 0}
+  tagSizeMismatchFraction: 0.15
   presets:
   - name: A
     solver: 0
@@ -871,6 +1020,7 @@ MonoBehaviour:
   hud: {fileID: 0}
   scanPolicy: {fileID: 0}
   tagManager: {fileID: 0}
+  stereoScanner: {fileID: 0}
 --- !u!114 &1146725265
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -955,12 +1105,44 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 2037080, guid: 126d619cf4daa52469682f85c1378b4a, type: 3}
+      propertyPath: m_ClearFlags
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 2037080, guid: 126d619cf4daa52469682f85c1378b4a, type: 3}
+      propertyPath: m_BackGroundColor.a
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2037080, guid: 126d619cf4daa52469682f85c1378b4a, type: 3}
+      propertyPath: m_BackGroundColor.b
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2037080, guid: 126d619cf4daa52469682f85c1378b4a, type: 3}
+      propertyPath: m_BackGroundColor.g
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2037080, guid: 126d619cf4daa52469682f85c1378b4a, type: 3}
+      propertyPath: m_BackGroundColor.r
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2037080, guid: 126d619cf4daa52469682f85c1378b4a, type: 3}
+      propertyPath: m_CullingMask.m_Bits
+      value: 4294967287
+      objectReference: {fileID: 0}
     - target: {fileID: 11400000, guid: 126d619cf4daa52469682f85c1378b4a, type: 3}
       propertyPath: _trackingOriginType
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 11400000, guid: 126d619cf4daa52469682f85c1378b4a, type: 3}
       propertyPath: isInsightPassthroughEnabled
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 11400000, guid: 126d619cf4daa52469682f85c1378b4a, type: 3}
+      propertyPath: requestScenePermissionOnStartup
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 11400000, guid: 126d619cf4daa52469682f85c1378b4a, type: 3}
+      propertyPath: requestPassthroughCameraAccessPermissionOnStartup
       value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
@@ -1432,3 +1614,4 @@ SceneRoots:
   - {fileID: 1543518975}
   - {fileID: 131859730}
   - {fileID: 1146725262}
+  - {fileID: 951979872}

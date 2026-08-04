@@ -154,8 +154,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::OcclusionSwapper
   depthOcclusionMaterial: {fileID: 2100000, guid: e12a9f209c502144ead20d2cc7a820fc, type: 2}
-  noOcclusionMaterial: {fileID: 2100000, guid: 283718b381c9c4247b9b2f5787ba6608, type: 2}
-  occlusionDistance: 1
+  noOcclusionMaterial: {fileID: 2100000, guid: 7a8b58273621a29429ef1a0eda578930, type: 2}
+  occlusionDistance: 0.75
   autoSwapEnabled: 1
 --- !u!1 &5770893990329113263
 GameObject:

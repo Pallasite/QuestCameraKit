@@ -1,7 +1,10 @@
 {
   "dependencies": {
-    "com.ivanmurzak.unity.mcp": "0.82.2",
-    "com.ivanmurzak.unity.mcp.probuilder": "1.2.23",
+    "com.ivanmurzak.unity.mcp": "0.86.0",
+    "com.ivanmurzak.unity.mcp.animation": "1.2.30",
+    "com.ivanmurzak.unity.mcp.inputsystem": "1.0.16",
+    "com.ivanmurzak.unity.mcp.probuilder": "1.2.30",
+    "com.ivanmurzak.unity.mcp.timeline": "1.0.16",
     "com.meta.xr.mrutilitykit": "83.0.4",
     "com.meta.xr.sdk.core": "83.0.4",
     "com.unity.ai.inference": "2.3.0",
@@ -48,9 +51,8 @@
     "com.unity.modules.vr": "1.0.0",
     "com.unity.modules.wind": "1.0.0",
     "com.unity.modules.xr": "1.0.0",
-    "com.ivanmurzak.unity.mcp.animation": "1.2.23",
-    "com.ivanmurzak.unity.mcp.inputsystem": "1.0.9",
-    "com.ivanmurzak.unity.mcp.timeline": "1.0.9"
+    "com.ivanmurzak.unity.mcp.splines": "1.0.15",
+    "com.ivanmurzak.unity.mcp.cinemachine": "1.0.16"
   },
   "scopedRegistries": [
     {
