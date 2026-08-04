@@ -362,16 +362,14 @@ per `SingleTagObstacleHandoff.md`.
 2. **Per-machine build config** — `UserSettings/QuestBuildSettings.json` is
    gitignored. Open the Quest Build window once (menu: Quest Build) to seed
    defaults, then set `outputFolder`.
-3. **Unity MCP connection** — one manual step. A tracked
-   `Unity-QuestVisionKit/.mcp.json` holds the server entry, but Claude Code only
-   reads `.mcp.json` from the **repo root**, so it is invisible there. On the
-   new machine either (a) copy `Unity-QuestVisionKit/.mcp.json` to the repo
-   root, or (b) run the `claude mcp add --transport http ai-game-developer
+3. **Unity MCP connection** — one manual step. MCP configs are no longer
+   tracked (2026-08-04: `.mcp.json` and `.gemini/*` were untracked because they
+   embed live bearer tokens; the token is machine-specific anyway). On the new
+   machine run the `claude mcp add --transport http ai-game-developer
    http://localhost:20788 --header "Authorization: Bearer <token>"` command
-   shown in Unity's AI Game Developer window. The bearer token may differ per
-   machine — always take it from that machine's Unity window. Unity must be
-   open (the server runs inside the Editor), and a Claude Code session restart
-   is required after MCP changes.
+   shown in Unity's AI Game Developer window (token + exact URL path come from
+   that window). Unity must be open (the server runs inside the Editor), and a
+   Claude Code session restart is required after MCP changes.
 4. **Trial conditions** — per-participant `trial_conditions.csv` is adb-pushed
    to the device; the StreamingAssets template is the fallback.
 5. **Claude memory/plans are machine-local** — this document is the handoff;
