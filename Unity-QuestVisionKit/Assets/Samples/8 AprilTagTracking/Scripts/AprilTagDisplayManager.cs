@@ -148,6 +148,7 @@ public class AprilTagDisplayManager : MonoBehaviour
     private bool _scanInProgress;
     private int _consecutiveErrors;
     private float _backoffUntil;
+    private bool _warnedBadMarkerPrefab;
 
     // Proximity gate state. _inScanRange is the latched in/out value; we flip
     // it lazily based on hysteresis so the gate doesn't flicker at the boundary.
@@ -199,7 +200,11 @@ public class AprilTagDisplayManager : MonoBehaviour
         _envRaycastManager = GetComponent<EnvironmentRaycastManager>();
 
         if (!markerPool) markerPool = MarkerPool.Instance;
-        if (!markerPool) Debug.LogWarning("[AprilTagDisplayManager] No MarkerPool assigned and no singleton found. Markers will not spawn.");
+        // No pool with markers set to Never is the expected experiment-scene
+        // configuration (the wireframe visualizer covers placement feedback) —
+        // only warn when markers were actually wanted.
+        if (!markerPool && markerDisplayMode != MarkerDisplayMode.Never)
+            Debug.LogWarning("[AprilTagDisplayManager] No MarkerPool assigned and no singleton found. Markers will not spawn.");
 
         // Auto-resolve the proximity gate from the same GameObject when not
         // wired explicitly. Matches the AprilTag stack's typical layout
@@ -471,7 +476,21 @@ public class AprilTagDisplayManager : MonoBehaviour
         if (!markerGo) return null;
 
         marker = markerGo.GetComponent<MarkerController>();
-        if (!marker) return null;
+        if (!marker)
+        {
+            // GetMarker() activates before we can inspect — deactivate the
+            // reject or a non-marker object (historically: an obstacle prefab
+            // mis-wired as markerPrefab) leaks fully visible at world origin,
+            // and every subsequent scan burns another pool slot on it.
+            markerGo.SetActive(false);
+            if (!_warnedBadMarkerPrefab)
+            {
+                _warnedBadMarkerPrefab = true;
+                Debug.LogError($"[AprilTagDisplayManager] Pooled marker '{markerGo.name}' has no MarkerController — " +
+                               "MarkerPool.markerPrefab is mis-wired. Markers disabled for this session.");
+            }
+            return null;
+        }
 
         _activeMarkers[tagId] = marker;
         return marker;

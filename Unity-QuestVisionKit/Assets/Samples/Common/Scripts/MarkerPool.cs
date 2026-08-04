@@ -26,6 +26,19 @@ public class MarkerPool : MonoBehaviour
         }
 
         _pool = new List<GameObject>(poolSize);
+
+        // A marker prefab without a MarkerController is a mis-wiring, not a
+        // marker: consumers (AprilTagDisplayManager.GetOrCreateMarker) reject
+        // the object AFTER the pool activates it, leaking a visible orphan at
+        // world origin. This exact accident shipped once with the obstacle
+        // prefab wired here — refuse to pre-warm instead.
+        if (markerPrefab == null || markerPrefab.GetComponentInChildren<MarkerController>(true) == null)
+        {
+            Debug.LogError($"[MarkerPool] markerPrefab '{(markerPrefab ? markerPrefab.name : "null")}' has no " +
+                           "MarkerController — pool disabled. Assign a marker prefab or remove this component.");
+            return;
+        }
+
         for (var i = 0; i < poolSize; i++)
         {
             var marker = Instantiate(markerPrefab, transform);

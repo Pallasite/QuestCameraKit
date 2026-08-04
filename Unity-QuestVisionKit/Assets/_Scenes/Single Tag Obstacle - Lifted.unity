@@ -4216,7 +4216,6 @@ GameObject:
   m_Component:
   - component: {fileID: 665711654}
   - component: {fileID: 665711652}
-  - component: {fileID: 665711655}
   - component: {fileID: 665711653}
   - component: {fileID: 665711659}
   - component: {fileID: 665711656}
@@ -4244,7 +4243,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AprilTagScanner
   sampleFactor: 2
-  tagSizeMeters: 0.171
+  tagSizeMeters: 0.092
   targetTagIds: 
 --- !u!114 &665711653
 MonoBehaviour:
@@ -4261,7 +4260,7 @@ MonoBehaviour:
   placementMode: 0
   markerDisplayScale: 1
   markerPool: {fileID: 0}
-  markerDisplayMode: 1
+  markerDisplayMode: 2
   placementGate: {fileID: 0}
   proximityGate: {fileID: 0}
   maxScanDistanceMeters: 2.5
@@ -4286,20 +4285,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &665711655
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 665711650}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 09420e86413e14ef6a1192b572643886, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::MarkerPool
-  markerPrefab: {fileID: 5770893990329113263, guid: c1066bdbdc55a0c45a75cc6691eb62af, type: 3}
-  poolSize: 4
 --- !u!114 &665711656
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -4343,7 +4328,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AprilTagWireframeVisualizer
   wireframeMaterial: {fileID: 2100000, guid: 007914e691e51ed41a4b0269a6ab175f, type: 2}
-  tagSizeMeters: 0.171
+  tagSizeMeters: 0.092
   sizeSource: {fileID: 0}
   corrector: {fileID: 0}
   displayMode: 4
@@ -4430,7 +4415,7 @@ MonoBehaviour:
   minDecisionMargin: 30
   targetTagIds: 
   maxFrameTimeDeltaMs: 30
-  tagSizeMeters: 0.171
+  tagSizeMeters: 0.092
   calibrationSampleFactor: 2
   calibrationDecimation: 2
   calibrationFrameCount: 8
@@ -9568,11 +9553,13 @@ MonoBehaviour:
   flow: {fileID: 1624277467}
   placement: {fileID: 1624277465}
   hud: {fileID: 1852337898}
+  stereoScanner: {fileID: 0}
   modifier: 4194304
   leftIndex: 8192
   rightIndex: 2097152
   menuButton: 256
   diagnosticsButton: 8388608
+  cycleSolverButton: 8
   holdSeconds: 0.9
   chordGroupingSeconds: 0.15
   haptics: 1
@@ -9592,6 +9579,8 @@ MonoBehaviour:
   obstaclePrefab: {fileID: 5770893990329113263, guid: c1066bdbdc55a0c45a75cc6691eb62af, type: 3}
   obstacleController: {fileID: 593700558}
   finesseController: {fileID: 593700556}
+  stereoScanner: {fileID: 0}
+  tagSizeMismatchFraction: 0.15
   presets:
   - name: A
     solver: 0
