@@ -209,6 +209,7 @@ Session-flow events (UX pass, all additive — still schema v1):
 | `application_pause` / `application_resume` | headset doffed/donned (OS pause) | (empty) — pause also forces a writer flush |
 | `trial_csv` (2026-08-04, additive) | once per trial-CSV load | `source=runtime\|template;rows=..;min=..;max=..;duplicates=..;gaps=..;invalid_lines=..` — structural summary of the loaded file; nonzero `duplicates`/`gaps`/`invalid_lines` also shows on the Setup HUD |
 | `trial_csv_error` (2026-08-04, additive) | trial CSV missing or unparseable | the error text (also shown on the Setup HUD) |
+| `finesse_nudge` / `finesse_reset` (2026-08-04, additive) | every finesse thumbstick nudge / offset reset | `axis=X\|Z\|Y\|yaw;step_m=..\|step_deg=..` or `kind=position\|rotation\|all`, plus `fine=0\|1;local_pos=x\|y\|z;local_yaw_deg=..` (the RESULTING offset — reconstruct the offset timeline without integrating deltas). Emitted unconditionally: the finesse layer moves the primary measurement, so it is never mutable without evidence. Nudges are also phase-gated to Setup/Ready/Paused when a `SessionFlowController` exists. |
 | `conventions` (2026-08-04, additive) | once at boot | `rot_semantics=yaw_flattened;perturb_axis=horizontal_walk_dir;trigger_metric=xz;reset_metric=3d;pivot=prefab_origin_on_tag_plane;tag_size_m=..;rot_solver=..;sampler_hz=..;pending_max_age_s=..` — the measurement semantics of this build, so a CSV is self-describing without git archaeology. Note `trigger_metric=xz` vs `reset_metric=3d`: the trigger check projects to the floor plane while the auto-reset uses full 3-D head distance (so an eye-height ~1.6 m head must be ~2.5 m out on the floor for a 3 m reset radius) — a deliberate self-report of an asymmetry that predates this row. |
 
 Walk-row semantics under redo/skip (2026-08-04 — `abandoned` introduced): a
@@ -317,4 +318,9 @@ On the Quest, sessions land in `Application.persistentDataPath` which maps to
   session_events; `obstacle_placed` gains `obstacle_h_m`/`base_below_tag_m`;
   trial navigation and natural advance step over CSV numbering gaps (a hole
   no longer ends the session), and boot loads the file's lowest trial number
-  (1-based CSVs no longer fire a spurious sequence-complete).
+  (1-based CSVs no longer fire a spurious sequence-complete). Also
+  `finesse_nudge`/`finesse_reset` rows (see the subtype table) — before this
+  date finesse offset changes left NO trace in the data. Host-side:
+  `Tools/Validate-Session.ps1` is the structural-integrity contract check for
+  a pulled bundle (run automatically by `Pull-Sessions.ps1`; carries its own
+  copy of the 58-column header and must be updated with any column change).

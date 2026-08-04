@@ -33,7 +33,11 @@ you: a floating panel always says what to do next.
    **"Capturing 6/10"** = keep holding, it's collecting samples.
 4. Fine-tune the obstacle position with the **thumbsticks** (left stick =
    slide, right stick = height + rotate). Hold the **left grip** for
-   millimeter-precision. A/B buttons reset position/rotation if you overshoot.
+   millimeter-precision. Overshot? **Press A twice** (within ~1 s) to zero the
+   position offset, **B twice** for rotation — the double-press guards against
+   a stray tap wiping your tuning. Fine-tuning only works before trials start
+   or while paused; during walks the sticks are locked (the panel says so if
+   you try). Every nudge is recorded in the data automatically.
 5. Made a mess? **HOLD R-grip + LEFT trigger** to clear and place again.
 
 ## Starting the walks

@@ -106,6 +106,13 @@ Write-Host ""
 Write-Host "Pulling $deviceSessions ..."
 $pullOut = & $adb pull $deviceSessions $staging
 if ($pullOut) { $pullOut | ForEach-Object { Write-Host "  $_" } }
+if ($LASTEXITCODE -ne 0) {
+    # A failed/partial pull must never proceed to indexing - and absolutely
+    # never to device cleanup, which would delete data that was never copied.
+    Write-Warning "adb pull failed (exit $LASTEXITCODE). Nothing indexed, nothing cleaned."
+    Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
+    exit 1
+}
 
 # adb may put files directly into $staging or inside $staging\Sessions
 $pulledRoot = if (Test-Path (Join-Path $staging 'Sessions')) { Join-Path $staging 'Sessions' } else { $staging }
@@ -115,6 +122,7 @@ $newSessionsPulled    = 0
 $legacyLogsPulled     = 0
 $unmatchedCount       = 0
 $affectedBases        = @{}
+$validationFailures   = 0
 
 # ---- NEW-LAYOUT sessions: subfolders with session.json ------------------------
 $sessionDirs = if (Test-Path $pulledRoot) {
@@ -160,6 +168,13 @@ foreach ($sessionDir in $sessionDirs) {
     New-Item -ItemType Directory -Path $dest -Force | Out-Null
     Copy-Item -Path (Join-Path $sessionDir.FullName '*') -Destination $dest -Recurse -Force
     Write-Host "  pulled $($sessionDir.Name)/  ->  $dest"
+
+    # Integrity check while the participant is still in the building. Bundles
+    # from idle launches have no experiment CSV and report FAIL - that only
+    # matters for cleanup gating when it is a real session, so count failures
+    # but keep pulling.
+    & "$PSScriptRoot\Validate-Session.ps1" -SessionFolder $dest -Quiet
+    if ($LASTEXITCODE -ne 0) { $validationFailures++ }
 
     if ($mirror -and $cloudFolder) {
         $cloudBase = if ($apkBase -and $hasLocalApk) {
@@ -367,9 +382,16 @@ if (-not $DryRun) {
 
 # ---- Optional device cleanup --------------------------------------------------
 if ($Cleanup -and -not $DryRun) {
-    Write-Host ""
-    Write-Host "Cleaning device folder $deviceSessions ..."
-    & $adb shell "rm -rf $deviceSessions/*"
+    if ($validationFailures -gt 0) {
+        # The device copy is the only remaining good copy of anything that
+        # failed validation locally - deleting it now would be unrecoverable.
+        Write-Warning "Skipping device cleanup: $validationFailures bundle(s) failed validation. Investigate, then clean manually if intended."
+    }
+    else {
+        Write-Host ""
+        Write-Host "Cleaning device folder $deviceSessions ..."
+        & $adb shell "rm -rf $deviceSessions/*"
+    }
 }
 
 Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
@@ -380,3 +402,6 @@ Write-Host "  new-layout sessions:  $newSessionsPulled"
 Write-Host "  legacy sessions:      $legacyLogsPulled"
 Write-Host "  unmatched:            $unmatchedCount"
 Write-Host "  root orphan CSVs:     $rootCsvsPulled"
+if ($validationFailures -gt 0) {
+    Write-Host "  validation failures:  $validationFailures  (see FAIL lines above)" -ForegroundColor Red
+}

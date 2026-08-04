@@ -82,7 +82,18 @@ public class ObstacleFinesseController : MonoBehaviour
     [SerializeField] private bool hapticOnNudge = true;
     [SerializeField, Range(0f, 1f)] private float hapticAmplitude = 0.4f;
     [SerializeField] private float hapticDurationSeconds = 0.04f;
+
+    [Tooltip("Verbose per-nudge Debug.Log lines. The SessionLogger CSV row per nudge/reset is " +
+             "ALWAYS emitted regardless — the finesse offset moves the study's primary " +
+             "measurement, so it must never be mutable without evidence in the data.")]
     [SerializeField] private bool logEachNudge = false;
+
+    [Header("Phase gating")]
+    [Tooltip("Auto-resolved. When a SessionFlowController exists, nudges and resets are allowed " +
+             "only while the condition is changeable (Setup/Ready/Paused) — a thumb slip during " +
+             "Running silently moved the obstacle mid-walk, unlogged. Scenes without a flow " +
+             "controller (old constellation scenes) are ungated as before.")]
+    [SerializeField] private SessionFlowController flow;
 
     private Transform Target
     {
@@ -135,7 +146,28 @@ public class ObstacleFinesseController : MonoBehaviour
         // Debug.Log still give feedback if it's missing).
         if (!placer) placer = FindAnyObjectByType<ControllerObstaclePlacer>();
         if (!driftCorrector) driftCorrector = FindAnyObjectByType<ControllerDriftCorrector>();
+        if (!flow) flow = FindAnyObjectByType<SessionFlowController>();
         if (_hud == null) _hud = HudSink.Find();
+    }
+
+    // Same availability rule as preset changes: Setup/Ready/Paused yes,
+    // Running no. Null flow (constellation scenes) falls open.
+    private bool NudgingAllowed => flow == null || flow.CanChangeConfig;
+
+    private float _nextDenyHintTime;
+
+    private bool DenyIfGated()
+    {
+        if (NudgingAllowed) return false;
+        // Sticks auto-repeat at 5 Hz — rate-limit the hint, skip the haptic
+        // (a buzz here would read as a successful nudge).
+        if (Time.unscaledTime >= _nextDenyHintTime)
+        {
+            _nextDenyHintTime = Time.unscaledTime + 2.5f;
+            if (_hud == null) _hud = HudSink.Find();
+            _hud?.ShowTransient("Placement is locked during trials — pause first to adjust", 2.5f);
+        }
+        return true;
     }
 
     private void OnEnable()
@@ -213,6 +245,7 @@ public class ObstacleFinesseController : MonoBehaviour
         // 1. Both grips + A → reset all (wins over right-grip+A → calibrate)
         if (leftGrip && rightGrip && aPressed)
         {
+            if (DenyIfGated()) return;
             var t = Target;
             if (t) ResetAll(t);
             return;
@@ -242,16 +275,41 @@ public class ObstacleFinesseController : MonoBehaviour
             }
         }
 
-        // 3. Per-axis resets (no grip modifier).
+        // 3. Per-axis resets (no grip modifier). Double-press to confirm: a
+        //    single stray A used to zero the whole carefully-tuned position
+        //    offset in one frame.
         var target = Target;
         if (!target) return;
 
-        if (!rightGrip && aPressed) ResetPosition(target);
-        if (!rightGrip && bPressed) ResetRotation(target);
+        if (!rightGrip && aPressed && !DenyIfGated()) RequestReset(resetRotation: false, target);
+        if (!rightGrip && bPressed && !DenyIfGated()) RequestReset(resetRotation: true, target);
+    }
+
+    private const float ResetConfirmWindowSeconds = 1.2f;
+    private float _pendingResetDeadline;
+    private int _pendingResetKind = -1;   // 0 = position (A), 1 = rotation (B)
+
+    private void RequestReset(bool resetRotation, Transform target)
+    {
+        int kind = resetRotation ? 1 : 0;
+        if (_pendingResetKind == kind && Time.unscaledTime <= _pendingResetDeadline)
+        {
+            _pendingResetKind = -1;
+            if (resetRotation) ResetRotation(target);
+            else ResetPosition(target);
+            return;
+        }
+        _pendingResetKind = kind;
+        _pendingResetDeadline = Time.unscaledTime + ResetConfirmWindowSeconds;
+        if (_hud == null) _hud = HudSink.Find();
+        _hud?.ShowTransient(resetRotation
+            ? "Press B again to zero the rotation offset"
+            : "Press A again to zero the position offset", ResetConfirmWindowSeconds);
     }
 
     private void HandleStickFire(QuestControllerInput.StickAxis axis, int sign)
     {
+        if (DenyIfGated()) return;
         var target = Target;
         if (!target) return;
 
@@ -354,6 +412,16 @@ public class ObstacleFinesseController : MonoBehaviour
     [ContextMenu("Toggle Finesse Target")]
     public void ToggleActiveTarget()
     {
+        // Single/double-tag scenes pin the target via SetManualTarget — the
+        // enum cycle would change nothing, but used to play a confident
+        // double-pulse + "target switched" transient anyway.
+        if (manualTarget)
+        {
+            if (_hud == null) _hud = HudSink.Find();
+            _hud?.ShowTransient("Finesse target is fixed in this scene (placement chain)", 2.5f);
+            return;
+        }
+
         activeTarget = activeTarget switch
         {
             FinesseTarget.AprilTag => FinesseTarget.Placer,
@@ -389,6 +457,9 @@ public class ObstacleFinesseController : MonoBehaviour
     {
         t.localPosition += deltaLocal;
         Pulse(pulseOn);
+        string step = (FineMode ? fineTranslationMeters : coarseTranslationMeters)
+            .ToString("F3", System.Globalization.CultureInfo.InvariantCulture);
+        LogFinesse("finesse_nudge", $"axis={label};step_m={step}", t);
         if (logEachNudge)
             Debug.Log($"[FinesseController] +{label} {(FineMode ? "mm" : "cm")} -> localPos={t.localPosition}");
     }
@@ -397,6 +468,8 @@ public class ObstacleFinesseController : MonoBehaviour
     {
         t.localRotation *= Quaternion.Euler(0f, degrees, 0f);
         Pulse(OVRInput.Controller.RTouch);
+        LogFinesse("finesse_nudge",
+            "axis=yaw;step_deg=" + degrees.ToString("F1", System.Globalization.CultureInfo.InvariantCulture), t);
         if (logEachNudge)
             Debug.Log($"[FinesseController] yaw {(FineMode ? "0.1°" : "1°")} -> localEuler={t.localRotation.eulerAngles}");
     }
@@ -406,6 +479,7 @@ public class ObstacleFinesseController : MonoBehaviour
         t ??= Target; if (!t) return;
         t.localPosition = Vector3.zero;
         Pulse(OVRInput.Controller.RTouch);
+        LogFinesse("finesse_reset", "kind=position", t);
         Debug.Log("[FinesseController] localPosition reset to zero.");
     }
 
@@ -414,6 +488,7 @@ public class ObstacleFinesseController : MonoBehaviour
         t ??= Target; if (!t) return;
         t.localRotation = Quaternion.identity;
         Pulse(OVRInput.Controller.RTouch);
+        LogFinesse("finesse_reset", "kind=rotation", t);
         Debug.Log("[FinesseController] localRotation reset to identity.");
     }
 
@@ -424,7 +499,24 @@ public class ObstacleFinesseController : MonoBehaviour
         t.localRotation = Quaternion.identity;
         Pulse(OVRInput.Controller.LTouch);
         Pulse(OVRInput.Controller.RTouch);
+        LogFinesse("finesse_reset", "kind=all", t);
         Debug.Log("[FinesseController] full reset.");
+    }
+
+    // Every offset mutation leaves a CSV row — the finesse layer sits inside
+    // the placement chain, so an unlogged nudge is an invisible change to the
+    // study's primary measurement. Detail carries the resulting local offset
+    // so the analyst can reconstruct the offset timeline without integrating
+    // deltas.
+    private void LogFinesse(string subtype, string what, Transform t)
+    {
+        if (SessionLogger.Instance == null) return;
+        var p = t.localPosition;
+        SessionLogger.Instance.Enqueue(LogEvent.SessionEvent(
+            subtype,
+            string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "{0};fine={1};local_pos={2:F4}|{3:F4}|{4:F4};local_yaw_deg={5:F2}",
+                what, FineMode ? 1 : 0, p.x, p.y, p.z, t.localRotation.eulerAngles.y)));
     }
 
     private void Pulse(OVRInput.Controller c)
