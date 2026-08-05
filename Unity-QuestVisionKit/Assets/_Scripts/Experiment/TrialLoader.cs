@@ -43,6 +43,17 @@ public class TrialLoader : MonoBehaviour
     /// <summary>Highest trial number in the CSV (0 when none loaded).</summary>
     public int MaxTrialNumber { get; private set; }
 
+    /// <summary>1-based position of a trial number within the loaded sequence
+    /// (count of trial numbers &lt;= it) — gap-correct, unlike index arithmetic.
+    /// Used for the HUD's "(n/M)" progress annotation.</summary>
+    public int PositionOf(int trialNumber)
+    {
+        int pos = 0;
+        foreach (int key in TrialConditions.Keys)
+            if (key <= trialNumber) pos++;
+        return pos;
+    }
+
     /// <summary>Non-null when the CSV loaded but with structural issues
     /// (duplicate trial numbers, numbering gaps, unparseable lines). Shown on
     /// the Setup HUD — these used to surface only in logcat, presenting to the

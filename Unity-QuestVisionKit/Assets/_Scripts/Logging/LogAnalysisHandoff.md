@@ -282,12 +282,12 @@ clear the device side.
 | Column                       | Type   | Meaning |
 |------------------------------|--------|---------|
 | `walk_index`                 | int    | Walk number, sourced from `TrialCondition.TrialNumber`. |
-| `walk_phase`                 | string | `start`, `moved`, `reset`, or `end`. |
+| `walk_phase`                 | string | `start`, `moved`, `reset`, `end`, or `abandoned` (2026-08-04 — manual skip away from an in-flight walk; before that date skips were mis-logged as `end`). |
 | `trial_active`               | 0/1    | Does the obstacle perturb during this trial? |
 | `move_towards_user`          | 0/1    | Direction of the perturbation. As of 2026-07-14 the motion is guaranteed **horizontal** along the obstacle's placement-yaw forward axis, and toward/away is computed on that same axis. Earlier sessions could move along the tag's full 3-D forward (vertical for a flat tag) with a world-Z sign that disagreed with the motion axis. |
 | `trigger_distance_m`         | float  | Proximity (XZ) at which the obstacle perturbs. |
 | `perturbation_distance_m`    | float  | How far the obstacle moves on trigger. |
-| `walk_duration_s`            | float  | Walk end - walk start, in seconds. Populated on `walk_phase=end`. |
+| `walk_duration_s`            | float  | Walk end - walk start, in seconds. Populated on `walk_phase=end` AND `walk_phase=abandoned` (elapsed until the skip). |
 | `corrections_applied_count`  | int    | **Reserved**: count of accepted controller corrections during the walk. Always empty/zero in current data — Phase 2. |
 | `max_correction_magnitude_m` | float  | **Reserved**: largest correction magnitude. Phase 2. |
 | `rejection_reason_histogram` | string | **Reserved**: JSON histogram of gate rejection reasons. Phase 2. |
@@ -423,6 +423,11 @@ walk produces 2–4 rows depending on whether the obstacle moved / reset:
 - `walk_phase=moved` — fired when the obstacle perturbed (only for `trial_active=1` trials).
 - `walk_phase=reset` — fired when the obstacle reset to origin.
 - `walk_phase=end` — fired on `OnTrialCompleted`. Populates `walk_duration_s`. The three "cumulative correction" columns are reserved for Phase 2 and currently empty.
+- `walk_phase=abandoned` (2026-08-04) — the operator manually skipped away
+  from this walk (`TrialLoadReason.Jump`); carries the abandoned walk's
+  condition and elapsed `walk_duration_s`. `end` means ONLY "walk completed".
+  Pre-2026-08-04 files logged a +1 skip as `end` — cross-check `trial_skip`
+  session_events when analyzing older sessions.
 
 `walk_index` is the trial number from `TrialCondition.TrialNumber`.
 
@@ -491,6 +496,7 @@ Phase fields populated on each `walk_event`:
 | `moved`      | `ObstacleController.OnObstacleMoved` | (none extra)                                          |
 | `reset`      | `ObstacleController.OnObstacleReset` | (none extra)                                          |
 | `end`        | `ObstacleController.OnTrialCompleted` | `walk_duration_s`                                    |
+| `abandoned`  | manual trial skip (`TrialLoadReason.Jump`, 2026-08-04) | `walk_duration_s` (elapsed until skip) |
 
 Trial parameters (`trial_active`, `move_towards_user`, `trigger_distance_m`,
 `perturbation_distance_m`) are repeated on each `walk_event` of the same

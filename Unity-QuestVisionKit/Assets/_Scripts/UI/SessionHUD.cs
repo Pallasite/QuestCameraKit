@@ -163,11 +163,16 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
 
         if (_sequencer != null && _loader != null && !_loader.MissingData)
         {
-            // Position within the sequence, robust to 0- or 1-based CSVs
-            // (position = index relative to the file's lowest trial number).
-            int pos = _sequencer.CurrentTrialIndex - _loader.MinTrialNumber + 1;
-            _sb.Append("  ·  Trial ").Append(Mathf.Clamp(pos, 1, _loader.TrialCount))
-               .Append('/').Append(_loader.TrialCount);
+            // Identity FIRST, progress in parens. The raw CSV trial number is
+            // what every other surface shows (walk_event rows, trial_skip/redo
+            // details, the flow transients, console, heartbeat) — a 1-based
+            // "position" here once made the HUD the only off-by-one surface,
+            // which is exactly how a lab-notebook trial note ends up pointing
+            // at the wrong CSV row. PositionOf is gap-correct.
+            int raw = _sequencer.CurrentTrialIndex;
+            _sb.Append("  ·  Trial ").Append(raw)
+               .Append(" (").Append(Mathf.Clamp(_loader.PositionOf(raw), 1, _loader.TrialCount))
+               .Append('/').Append(_loader.TrialCount).Append(')');
         }
 
         _sb.Append("  ·  ").Append(FormatElapsed(Time.realtimeSinceStartup));

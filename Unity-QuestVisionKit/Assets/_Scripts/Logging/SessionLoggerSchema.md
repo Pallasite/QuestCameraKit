@@ -56,7 +56,7 @@ Sparse columns (only populated for relevant event types):
 | `move_towards_user` | 0/1 | `walk_event` |
 | `trigger_distance_m` | float | `walk_event` |
 | `perturbation_distance_m` | float | `walk_event` |
-| `walk_duration_s` | float | `walk_event` (phase=end) |
+| `walk_duration_s` | float | `walk_event` (phase=end or abandoned — elapsed until the skip) |
 | `corrections_applied_count` | int | `walk_event` (phase=end) — Phase 1: always 0 |
 | `max_correction_magnitude_m` | float | `walk_event` (phase=end) — Phase 1: empty |
 | `rejection_reason_histogram` | JSON string | `walk_event` (phase=end) — Phase 1: empty |

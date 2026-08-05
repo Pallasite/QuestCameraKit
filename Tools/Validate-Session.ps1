@@ -107,7 +107,7 @@ if ($Csv -and (Test-Path $Csv)) {
         }
         else {
             $header = $header.TrimStart([char]0xFEFF)
-            if ($header -ne $ExpectedHeader) {
+            if ($header -cne $ExpectedHeader) {
                 $failures.Add('header does not match the schema v1 contract (58 columns) - build/validator mismatch or corrupt file')
             } else { $headerOk = $true }
         }

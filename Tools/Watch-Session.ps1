@@ -45,7 +45,10 @@ if ($Log) {
 }
 
 # Start from now, not from the (possibly hours-old) buffer.
-& $adb logcat -c 2>$null
+# NOTE: no 2>$null here - under ErrorActionPreference=Stop, redirecting a
+# native command's stderr wraps each line in an ErrorRecord and THROWS in
+# PowerShell 5.1, killing the script before it ever streams.
+try { & $adb logcat -c | Out-Null } catch { }
 
 Write-Host "Waiting for [SessionHeartbeat] lines (Ctrl+C to stop)..."
 & $adb logcat -v raw -s Unity:I | ForEach-Object {
