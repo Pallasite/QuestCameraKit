@@ -340,10 +340,12 @@ Tier 0 verification. The list below is kept for context:
   `fileID: 0`, so player builds shipped without them and logged
   `Failed to find shader "URP/UI/Prerendered"`).
 - **HUD walk popup (2026-08-18)**: mid-run trial Advance/Jump pops a large
-  centered "Walk n of M" (position-based, gap-correct) on the otherwise-hidden
-  HUD for `SessionHUD.walkPopupSeconds` (default 2 s), then hides again.
-  Suppressed on redo and whenever the full panel is already visible
-  (diagnostics/clearance/paused). New `WalkPopup` zone in the HUD prefab.
+  centered "Walk n" (raw 0-based CSV trial index) on the otherwise-hidden HUD —
+  delayed by `SessionHUD.walkPopupDelaySeconds` (default 3 s, so the
+  participant is off the gait mat before any visual stimulus), shown for
+  `walkPopupSeconds` (default 2 s), then hidden again. Suppressed on redo and
+  whenever the full panel is already visible (diagnostics/clearance/paused).
+  New `WalkPopup` zone in the HUD prefab.
 - **Guardian (Scratch, 2026-08-18)**: `OVRManager.shouldBoundaryVisibilityBeSuppressed=1`
   scene override added (Lifted and the older scenes already had it). Suppression
   only holds while passthrough is initialized; logcat

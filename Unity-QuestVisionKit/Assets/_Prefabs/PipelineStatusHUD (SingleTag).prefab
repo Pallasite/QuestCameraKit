@@ -110,6 +110,7 @@ MonoBehaviour:
   refreshInterval: 0.15
   defaultTransientSeconds: 3
   walkPopupSeconds: 2
+  walkPopupDelaySeconds: 3
   hideWhileRunning: 1
 --- !u!114 &3466910484051223100
 MonoBehaviour:

@@ -13,8 +13,9 @@ using UnityEngine;
 ///   3. Transients   — action confirmations (IHudTransientSink-compatible)
 ///   4. Diagnostics  — toggleable: tag last-seen, anchor state, last correction,
 ///                     logger heartbeat. Toggle also forces the wireframe visible.
-///   5. Walk popup   — Running-only: a large "Walk n of M" takeover for a couple
-///                     of seconds on trial advance/skip, then hidden again.
+///   5. Walk popup   — Running-only: a large "Walk n" takeover on trial
+///                     advance/skip, delayed a few seconds so the participant
+///                     is off the gait mat first, then hidden again.
 ///
 /// Audience-aware: during Running the participant wears the headset, so the HUD
 /// hides entirely (nothing to read mid-walk; the experimenter gets haptics).
@@ -39,8 +40,12 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
     [SerializeField] private float refreshInterval = 0.15f;
     [SerializeField] private float defaultTransientSeconds = 3f;
 
-    [Tooltip("How long the large \"Walk n of M\" readout shows after a mid-run trial advance/skip (s).")]
+    [Tooltip("How long the large \"Walk n\" readout shows after a mid-run trial advance/skip (s).")]
     [SerializeField] private float walkPopupSeconds = 2f;
+
+    [Tooltip("Delay before the walk readout appears after advance — the participant must step " +
+             "off the gait mat before any visual stimulus (s).")]
+    [SerializeField] private float walkPopupDelaySeconds = 3f;
 
     [Tooltip("Hide the whole HUD while trials are Running (the participant wears the headset " +
              "mid-walk and must not be distracted). Diagnostics toggle overrides.")]
@@ -68,8 +73,9 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
     private float _holdProgress;
     private float _holdExpiry;
 
-    // Walk popup ("Walk n of M") — canvas takeover while Running-hidden.
+    // Walk popup ("Walk n") — delayed canvas takeover while Running-hidden.
     private string _walkPopupMessage;
+    private float _walkPopupShowAt;
     private float _walkPopupExpiry;
 
     /// <summary>Diagnostics zone visibility (also forces the tag wireframe visible).</summary>
@@ -151,11 +157,13 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
         // Advance/Jump only. Initial is pre-run; Redo repeats the number the
         // participant just walked (its own haptics + clearance HUD already signal).
         if (reason != TrialLoadReason.Advance && reason != TrialLoadReason.Jump) return;
-        if (_loader == null || _loader.MissingData) return;
 
-        int pos = Mathf.Clamp(_loader.PositionOf(_sequencer.CurrentTrialIndex), 1, _loader.TrialCount);
-        _walkPopupMessage = $"Walk {pos} of {_loader.TrialCount}";
-        _walkPopupExpiry = Time.time + walkPopupSeconds;
+        // Raw CSV trial index (0-based in the lab's files) — the same number the
+        // status bar, logs, and web console lead with. Shown after a delay so the
+        // participant has stepped off the gait mat before any visual stimulus.
+        _walkPopupMessage = $"Walk {_sequencer.CurrentTrialIndex}";
+        _walkPopupShowAt = Time.time + walkPopupDelaySeconds;
+        _walkPopupExpiry = _walkPopupShowAt + walkPopupSeconds;
     }
 
     // ---- refresh loop ----
@@ -175,10 +183,11 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
         // Walk popup: evaluated BEFORE the hidden computation — expiry must tick
         // even on refreshes that end in the hidden early-return. Running-only:
         // any other phase cancels it (pause/complete mid-popup must not leave a
-        // resumable timer behind).
+        // resumable timer behind). A pending message (armed, still inside the
+        // gait-mat delay) survives until show time — clear on expiry only.
         if (phase != SessionPhase.Running) _walkPopupExpiry = 0f;
-        bool popupLive = _walkPopupMessage != null && Time.time < _walkPopupExpiry;
-        if (!popupLive) _walkPopupMessage = null;
+        if (Time.time >= _walkPopupExpiry) _walkPopupMessage = null;
+        bool popupLive = _walkPopupMessage != null && Time.time >= _walkPopupShowAt;
 
         // Audience rule: hide mid-walk (participant wears the headset).
         // Disable the Canvas COMPONENT, not its GameObject — the canvas lives on
