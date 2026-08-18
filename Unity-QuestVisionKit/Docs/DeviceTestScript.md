@@ -22,6 +22,12 @@ phases 0–2 and 7–8 (untethered for the walk phases).
 
 ## 1. Setup phase / placement (headset on)
 
+- [ ] Session HUD is readable against bare passthrough — nothing behind it
+      (HUD is now an Overlay compositor layer). No text-shaped dark
+      silhouettes over 3D geometry; logcat has no `Failed to find shader`.
+- [ ] Guardian boundary grid never appears while the app runs (suppression
+      needs passthrough up); logcat has no `Cannot suppress boundary
+      visibility`.
 - [ ] Setup panel shows **participant ID + source** (`P… (from
       file/inspector)`) — verify it matches the pushed `participant.txt`.
 - [ ] Panel shows Trial 1/N for your CSV (works for 0- or 1-based files).

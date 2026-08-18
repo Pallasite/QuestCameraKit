@@ -331,6 +331,18 @@ Tier 0 verification. The list below is kept for context:
 **Device-test BOTH scenes** (QuestBuildWindow "Build + Deploy" or
 `Tools/Deploy-Latest.ps1`). Watch for:
 - Scene B passthrough rendering (fresh OVRPassthroughLayer vs A's building block).
+- **HUD (Scratch, 2026-08-18)**: Session HUD's `OVROverlayCanvas` is now
+  `overlayType=Overlay` (composited on top of eye buffer + passthrough; always
+  visible, never occluded by geometry). It was Underlay, which the passthrough
+  underlay always covered — the HUD only "showed" as hole-punch silhouettes
+  where 3D geometry sat behind it. Related: the imposter shaders are now
+  serialized in `Assets/Resources/OVROverlayCanvasSettings.asset` (they were
+  `fileID: 0`, so player builds shipped without them and logged
+  `Failed to find shader "URP/UI/Prerendered"`).
+- **Guardian (Scratch, 2026-08-18)**: `OVRManager.shouldBoundaryVisibilityBeSuppressed=1`
+  scene override added (Lifted and the older scenes already had it). Suppression
+  only holds while passthrough is initialized; logcat
+  `Cannot suppress boundary visibility` means the system refused it.
 - **Perf**: fps ≥ ~90 inside the ~2.57 m scan gate during trials (previously
   60-70); if profiling, `ProcessImage` should no longer appear on the main
   thread and per-scan GC alloc should be near zero.

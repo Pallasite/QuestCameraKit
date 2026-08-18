@@ -226,6 +226,7 @@ MonoBehaviour:
   hapticAmplitude: 0.4
   hapticDurationSeconds: 0.04
   logEachNudge: 0
+  flow: {fileID: 0}
 --- !u!114 &112548703
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -867,7 +868,7 @@ MonoBehaviour:
   shape: 0
   curveRadius: 1
   overlapMask: 0
-  overlayType: 1
+  overlayType: 2
   _overlayEnabled: 1
 --- !u!1 &1146725258
 GameObject:
@@ -968,6 +969,8 @@ MonoBehaviour:
   hideUntilPlaced: 1
   logMeasurements: 1
   measurementLogRateHz: 30
+  sampleAppliedPose: 1
+  appliedSampleRateHz: 2
 --- !u!4 &1146725262
 Transform:
   m_ObjectHideFlags: 0
@@ -1014,6 +1017,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::RemoteConsoleServer
   startServerOnEnable: 1
   port: 8787
+  logcatHeartbeat: 1
+  heartbeatIntervalSeconds: 1
   flow: {fileID: 0}
   placement: {fileID: 0}
   sequencer: {fileID: 0}
@@ -1139,6 +1144,10 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 11400000, guid: 126d619cf4daa52469682f85c1378b4a, type: 3}
       propertyPath: requestScenePermissionOnStartup
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 11400000, guid: 126d619cf4daa52469682f85c1378b4a, type: 3}
+      propertyPath: shouldBoundaryVisibilityBeSuppressed
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 11400000, guid: 126d619cf4daa52469682f85c1378b4a, type: 3}
