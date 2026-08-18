@@ -13,9 +13,12 @@ using UnityEngine;
 ///   3. Transients   — action confirmations (IHudTransientSink-compatible)
 ///   4. Diagnostics  — toggleable: tag last-seen, anchor state, last correction,
 ///                     logger heartbeat. Toggle also forces the wireframe visible.
+///   5. Walk popup   — Running-only: a large "Walk n of M" takeover for a couple
+///                     of seconds on trial advance/skip, then hidden again.
 ///
 /// Audience-aware: during Running the participant wears the headset, so the HUD
 /// hides entirely (nothing to read mid-walk; the experimenter gets haptics).
+/// A trial advance briefly pops the large walk readout for the participant.
 /// It returns on Paused ("PAUSED") and Complete ("remove the headset").
 ///
 /// All data sources are auto-resolved — this component lives in a prefab, and
@@ -30,10 +33,14 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
     [SerializeField] private TMP_Text guidanceText;
     [SerializeField] private TMP_Text transientText;
     [SerializeField] private TMP_Text diagnosticsText;
+    [SerializeField] private TMP_Text walkPopupText;
 
     [Header("Display")]
     [SerializeField] private float refreshInterval = 0.15f;
     [SerializeField] private float defaultTransientSeconds = 3f;
+
+    [Tooltip("How long the large \"Walk n of M\" readout shows after a mid-run trial advance/skip (s).")]
+    [SerializeField] private float walkPopupSeconds = 2f;
 
     [Tooltip("Hide the whole HUD while trials are Running (the participant wears the headset " +
              "mid-walk and must not be distracted). Diagnostics toggle overrides.")]
@@ -61,6 +68,10 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
     private float _holdProgress;
     private float _holdExpiry;
 
+    // Walk popup ("Walk n of M") — canvas takeover while Running-hidden.
+    private string _walkPopupMessage;
+    private float _walkPopupExpiry;
+
     /// <summary>Diagnostics zone visibility (also forces the tag wireframe visible).</summary>
     public bool DiagnosticsVisible { get; private set; }
 
@@ -75,11 +86,28 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
         ResolveSources();
     }
 
+    private void OnEnable()
+    {
+        if (_sequencer != null) _sequencer.OnTrialLoaded += HandleTrialLoaded;
+    }
+
+    private void OnDisable()
+    {
+        if (_sequencer != null) _sequencer.OnTrialLoaded -= HandleTrialLoaded;
+    }
+
     private void ResolveSources()
     {
         if (_flow == null) _flow = FindAnyObjectByType<SessionFlowController>();
         if (_placement == null) _placement = FindAnyObjectByType<ObstaclePlacementController>();
-        if (_sequencer == null) _sequencer = FindAnyObjectByType<TrialSequencer>();
+        if (_sequencer == null)
+        {
+            _sequencer = FindAnyObjectByType<TrialSequencer>();
+            // Subscribe at acquisition: the null guard means this fires at most
+            // once per found sequencer, and acquisition implies we are enabled
+            // (only Update calls this), so OnEnable/OnDisable stay balanced.
+            if (_sequencer != null) _sequencer.OnTrialLoaded += HandleTrialLoaded;
+        }
         if (_loader == null) _loader = FindAnyObjectByType<TrialLoader>();
         if (_wireframe == null) _wireframe = FindAnyObjectByType<AprilTagWireframeVisualizer>();
         if (_stereoScanner == null) _stereoScanner = FindAnyObjectByType<StereoAprilTagScanner>();
@@ -112,6 +140,24 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
         ShowTransient(DiagnosticsVisible ? "Diagnostics ON" : "Diagnostics off");
     }
 
+    /// <summary>Trial advanced/skipped mid-run: arm the walk popup. Record only —
+    /// the display decision lives in Refresh, AFTER the flow controller has
+    /// settled clearance flags for this load (OnTrialLoaded fires synchronously
+    /// from LoadTrial, before JumpBy sets WaitingForRedoClearance).</summary>
+    private void HandleTrialLoaded(TrialCondition condition)
+    {
+        if (_flow == null || _flow.Phase != SessionPhase.Running) return;
+        var reason = _sequencer != null ? _sequencer.LastLoadReason : TrialLoadReason.Initial;
+        // Advance/Jump only. Initial is pre-run; Redo repeats the number the
+        // participant just walked (its own haptics + clearance HUD already signal).
+        if (reason != TrialLoadReason.Advance && reason != TrialLoadReason.Jump) return;
+        if (_loader == null || _loader.MissingData) return;
+
+        int pos = Mathf.Clamp(_loader.PositionOf(_sequencer.CurrentTrialIndex), 1, _loader.TrialCount);
+        _walkPopupMessage = $"Walk {pos} of {_loader.TrialCount}";
+        _walkPopupExpiry = Time.time + walkPopupSeconds;
+    }
+
     // ---- refresh loop ----
 
     private void Update()
@@ -126,15 +172,46 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
     {
         var phase = _flow != null ? _flow.Phase : SessionPhase.Setup;
 
+        // Walk popup: evaluated BEFORE the hidden computation — expiry must tick
+        // even on refreshes that end in the hidden early-return. Running-only:
+        // any other phase cancels it (pause/complete mid-popup must not leave a
+        // resumable timer behind).
+        if (phase != SessionPhase.Running) _walkPopupExpiry = 0f;
+        bool popupLive = _walkPopupMessage != null && Time.time < _walkPopupExpiry;
+        if (!popupLive) _walkPopupMessage = null;
+
         // Audience rule: hide mid-walk (participant wears the headset).
         // Disable the Canvas COMPONENT, not its GameObject — the canvas lives on
         // this same GameObject, and SetActive(false) would kill our own Update
         // loop and never come back.
         bool hidden = hideWhileRunning && phase == SessionPhase.Running && !DiagnosticsVisible
                       && (_flow == null || !_flow.WaitingForRedoClearance);
+
+        // Popup borrows the canvas only while the HUD would otherwise be hidden;
+        // a visible HUD (diagnostics/clearance) already carries the trial position.
+        bool popupOnly = popupLive && hidden && walkPopupText != null;
+        if (popupOnly) hidden = false;
+        if (walkPopupText != null && walkPopupText.gameObject.activeSelf != popupOnly)
+            walkPopupText.gameObject.SetActive(popupOnly);
+
         if (_canvas != null && _canvas.enabled == hidden)
             _canvas.enabled = !hidden;
         if (hidden) return;
+
+        if (popupOnly)
+        {
+            walkPopupText.text = _walkPopupMessage;
+            // Blank the packed zones — the canvas re-enabled with whatever text
+            // the last fully-visible phase left behind.
+            if (statusText != null) statusText.text = string.Empty;
+            if (guidanceText != null) guidanceText.text = string.Empty;
+            if (transientText != null) transientText.text = string.Empty;
+            // Diagnostics toggled OFF during Running leaves its GO active behind
+            // the disabled canvas — it must not render behind the popup.
+            if (diagnosticsText != null && diagnosticsText.gameObject.activeSelf)
+                diagnosticsText.gameObject.SetActive(false);
+            return;
+        }
 
         if (statusText != null) statusText.text = BuildStatus(phase);
         if (guidanceText != null) guidanceText.text = BuildGuidance(phase);

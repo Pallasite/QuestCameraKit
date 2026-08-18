@@ -62,6 +62,8 @@ phases 0–2 and 7–8 (untethered for the walk phases).
       the tag's walking direction (both mountings if time allows).
 - [ ] Step past → auto-reset; deferred correction applies between trials
       (no visible mid-walk motion).
+- [ ] After stepping past: HUD pops large **"Walk n of M"** alone for ~2 s,
+      then hides. Also after skip; NOT after redo.
 - [ ] HOLD R trigger (redo): **2 short right**; walk clear → unprompted
       **3 strong both** = re-armed.
 - [ ] HOLD R-grip + R trigger (skip): **3 short right** — confirm you can
