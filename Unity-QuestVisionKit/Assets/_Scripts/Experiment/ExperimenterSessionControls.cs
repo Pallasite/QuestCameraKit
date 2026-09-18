@@ -19,6 +19,8 @@ using UnityEngine;
 ///   PRESS Start (menu)                Pause / Resume              [Running/Paused]
 ///   PRESS R thumbstick click          Toggle diagnostics zone     [any]
 ///   PRESS R grip + Y (left)           Cycle AprilTag rot solver   [any]
+///   PRESS R grip + X (left)           Open / close the trial picker [Ready/Paused]
+///   HOLD X (left, picker open)        Commit the seek               [Ready/Paused]
 ///
 /// The rot-solver cycle is a read-side diagnostic (mirrors the web console's
 /// cycleRotationSolver action — built for labs where the console is
@@ -27,16 +29,30 @@ using UnityEngine;
 /// Previous-trial has no chord (rarely needed mid-walk; misfire risk next to
 /// Redo) — it lives on the web console (RemoteConsoleServer) only.
 ///
+/// TRIAL PICKER — an exclusive mode for seeking to an arbitrary trial before
+/// trials start or while paused (single-step Skip covers ±1; this covers "go
+/// to trial 17"). While open, this surface CLAIMS the left thumbstick from
+/// ObstacleFinesseController (which otherwise nudges the obstacle with it in
+/// exactly these phases) via its InputSuppressed flag, and releases it only
+/// once the stick has re-centred — the fire/rearm latch in QuestControllerInput
+/// is shared, so handing back a deflected stick would auto-repeat nudges into
+/// the obstacle. L stick X steps ±1 trial, L stick Y ±5, both gap-correct and
+/// clamped (never wrapping). Commit is HOLD X, deliberately NOT the R index
+/// trigger: that is Redo while Paused, and the picker's likeliest exit
+/// (Resume) blanks the HUD, so a stale-mode hold there would fire a real redo
+/// unnoticed. Any phase change closes the picker with the refusal buzz.
+///
 /// HAPTIC VOCABULARY — during Running the HUD is hidden, so for most of a
 /// session these patterns are the operator's ONLY feedback channel. Rules:
 /// the hold ramp and the confirmation buzz on the hand whose finger acts
 /// (left-hand actions buzz LEFT, right-hand actions buzz RIGHT, session-level
 /// actions buzz BOTH); pulse count separates same-hand actions (Redo = 2R,
-/// Skip = 3R; Recapture = 3L); a REFUSED or FAILED action never gets a
-/// success buzz — it gets one long low-frequency buzz ("nope"), and success
-/// buzzes fire only AFTER the underlying call reports success. Placement
-/// commit ("the obstacle actually appeared") is its own two long left pulses,
-/// distinct from the light request-accepted tick. Pause = one long strong
+/// Skip = 3R; Recapture = 3L; seek commit = 1 long + 2 short L); a REFUSED or
+/// FAILED action never gets a success buzz — it gets one long low-frequency
+/// buzz ("nope"), and success buzzes fire only AFTER the underlying call
+/// reports success. Placement commit ("the obstacle actually appeared") is
+/// its own two long left pulses, distinct from the light request-accepted
+/// tick. Pause = one long strong
 /// buzz on both; Resume = two short on both. The clearance re-arm alert
 /// (SessionFlowController) is three strong pulses on both. Full table in
 /// Docs/OperatorQuickstart.md.
@@ -51,7 +67,7 @@ using UnityEngine;
 [DisallowMultipleComponent]
 public sealed class ExperimenterSessionControls : MonoBehaviour
 {
-    private enum HoldAction { None, Place, Recapture, StartTrials, Redo, CyclePreset, NextTrial }
+    private enum HoldAction { None, Place, Recapture, StartTrials, Redo, CyclePreset, NextTrial, SeekTrial }
 
     /// <summary>Which controller(s) a pattern plays on — the hand whose finger acts.</summary>
     private enum Hand { Left, Right, Both }
@@ -62,6 +78,7 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
     [SerializeField] private ObstaclePlacementController placement;
     [SerializeField] private SessionHUD hud;
     [SerializeField] private StereoAprilTagScanner stereoScanner;
+    [SerializeField] private ObstacleFinesseController finesse;
 
     [Header("Bindings")]
     [SerializeField] private OVRInput.Button modifier = OVRInput.Button.SecondaryHandTrigger;   // R grip
@@ -74,6 +91,13 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
              "is bound to nothing else project-wide, so the chord can't collide — even if a " +
              "ConstellationDriftCorrector (which claims R-grip+A/B) returns to the scene.")]
     [SerializeField] private OVRInput.Button cycleSolverButton = OVRInput.Button.Four;
+
+    [Tooltip("R grip + this opens/closes the trial picker; the SAME button held alone commits " +
+             "the seek. X (Button.Three, left controller) is bound to nothing else project-wide. " +
+             "Commit is deliberately NOT the R index trigger: that means Redo while Paused, and " +
+             "the picker's most likely exit (Resume) blanks the HUD, so a stale-mode hold there " +
+             "would fire a real redo with no way to notice.")]
+    [SerializeField] private OVRInput.Button pickerButton = OVRInput.Button.Three;
 
     [Header("Hold tuning")]
     [Tooltip("Seconds a hold must be sustained to commit.")]
@@ -93,6 +117,16 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
     private bool _vibrating;
     private Coroutine _pattern;
 
+    // ---- trial picker state ----
+    private bool _pickerActive;
+    private int _seekCandidate;
+    private string _pickerNote;                 // composed INTO the picker row, never a transient
+    private string _pickerRow;                  // rebuilt on candidate change, not per frame
+    private bool _releasingStickClaim;          // suppression held until the L stick re-centres
+    private QuestControllerInput.StickAxis _lockedAxis;
+    private bool _axisLocked;
+    private float _lastAxisFireTime;
+
     private void Awake()
     {
         if (!input) input = FindAnyObjectByType<QuestControllerInput>();
@@ -100,6 +134,7 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
         if (!placement) placement = FindAnyObjectByType<ObstaclePlacementController>();
         if (!hud) hud = FindAnyObjectByType<SessionHUD>();
         if (!stereoScanner) stereoScanner = FindAnyObjectByType<StereoAprilTagScanner>();
+        if (!finesse) finesse = FindAnyObjectByType<ObstacleFinesseController>();
     }
 
     private void OnEnable()
@@ -108,11 +143,19 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
         // request (the stable capture lands async), so the commit tick must
         // not read as "obstacle placed" — this pattern does.
         if (placement != null) placement.OnPlaced += HandlePlaced;
+        if (flow != null) flow.OnPhaseChanged += HandlePhaseChanged;
     }
 
     private void OnDisable()
     {
         if (placement != null) placement.OnPlaced -= HandlePlaced;
+        if (flow != null) flow.OnPhaseChanged -= HandlePhaseChanged;
+        if (input != null) input.OnStickFire -= HandlePickerStick;
+        
+        // Never strand the finesse controller if this surface is disabled mid-pick.
+        _pickerActive = false;
+        _releasingStickClaim = false;
+        if (finesse != null) finesse.InputSuppressed = false;
     }
 
     private void HandlePlaced() => PlayPattern(Hand.Left, pulses: 2, amplitude: 0.8f, onSeconds: 0.12f, gapSeconds: 0.1f);
@@ -167,6 +210,18 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
                 RefusalBuzz(Hand.Both);
             }
         }
+
+        // ---- trial picker ----
+        // Dispatched outside the index-trigger grouping (like CyclePreset), so
+        // both index triggers stay free while the picker is open.
+        if (input.WasPressedThisFrame(pickerButton))
+        {
+            if (mod) TogglePicker();
+            else if (_pickerActive) TryBeginHold(HoldAction.SeekTrial);
+            // X alone outside the picker is inert by design - no refusal, no hold.
+        }
+
+        TickPicker();
 
         // ---- index-trigger chord grouping ----
         bool lPressedNow = input.WasPressedThisFrame(leftIndex);
@@ -281,9 +336,14 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
             HoldAction.Redo => flow != null && flow.RedoTrial(),
             HoldAction.CyclePreset => placement != null && placement.CyclePreset(),
             HoldAction.NextTrial => flow != null && flow.NextTrial(),
+            HoldAction.SeekTrial => flow != null && flow.SeekToTrial(_seekCandidate),
             _ => false,
         };
 
+
+        // The picker is a one-shot mode: whatever the seek did, it is over.
+        // Closed AFTER the dispatch so Label() could still read the candidate.
+        if (action == HoldAction.SeekTrial) ClosePicker(exitBuzz: false);
         if (ok) PlaySuccessPattern(action);
         else RefusalBuzz(HandFor(action));
     }
@@ -301,6 +361,7 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
             HoldAction.Redo => r && !l && !mod,
             HoldAction.NextTrial => r && !l && mod,
             HoldAction.CyclePreset => input.IsHeld(menuButton) && mod,
+            HoldAction.SeekTrial => input.IsHeld(pickerButton) && !mod,
             _ => false,
         };
     }
@@ -342,6 +403,10 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
                 if (flow.CanChangeConfig) return true;
                 denyHint = "Pause first to change the condition";
                 return false;
+            case HoldAction.SeekTrial:
+                if (flow.CanSeekTrial) return true;
+                denyHint = "Trial picker works when Ready or Paused";
+                return false;
             default:
                 return false;
         }
@@ -356,6 +421,9 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
         HoldAction.Redo => "Redo trial",
         HoldAction.CyclePreset => "Change condition",
         HoldAction.NextTrial => "Next trial",
+        // Carries the candidate: the hold bar outranks the picker row, so without
+        // this the commit would blank the one number being confirmed.
+        HoldAction.SeekTrial => $"Go to trial {_seekCandidate}",
         _ => "",
     };
 
@@ -379,6 +447,146 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
             $"rot_solver={next};tag_size_m={stereoScanner.TagSizeMeters.ToString("F3", CultureInfo.InvariantCulture)};reason=set_rot_solver"));
     }
 
+
+    // ---- trial picker ----------------------------------------------------
+    //
+    // A small exclusive mode: while it is open this surface owns the left
+    // thumbstick (the finesse controller normally nudges the obstacle with it,
+    // and is live in exactly these phases), and X commits. Everything else -
+    // pause, start trials, place - keeps working.
+
+    private void TogglePicker()
+    {
+        if (_pickerActive) { ClosePicker(exitBuzz: false); return; }
+
+        if (flow == null || !flow.CanSeekTrial)
+        {
+            Hint("Trial picker works when Ready or Paused");
+            RefusalBuzz(Hand.Left);
+            return;
+        }
+        if (flow.TrialCount <= 0)
+        {
+            Hint("No trial CSV loaded");
+            RefusalBuzz(Hand.Left);
+            return;
+        }
+
+        _pickerActive = true;
+        _releasingStickClaim = false;
+        _axisLocked = false;
+        _seekCandidate = flow.CurrentTrialNumber;
+        _pickerNote = null;
+        RebuildPickerRow();
+
+        if (finesse != null) finesse.InputSuppressed = true;
+        if (input != null) input.OnStickFire += HandlePickerStick;
+
+        // Two soft left taps = "the sticks are mine now".
+        PlayPattern(Hand.Left, pulses: 2, amplitude: 0.4f, onSeconds: 0.05f, gapSeconds: 0.07f);
+    }
+
+    private void ClosePicker(bool exitBuzz)
+    {
+        if (!_pickerActive) return;
+        _pickerActive = false;
+        _axisLocked = false;
+        if (input != null) input.OnStickFire -= HandlePickerStick;
+
+        // Hold the stick claim until the stick re-centres. The fire/rearm latch
+        // lives in QuestControllerInput and is shared by all subscribers, so a
+        // stick still deflected past the threshold is already auto-repeating at
+        // 5 Hz - handing it straight back would walk the obstacle while the
+        // operator is still looking at the trial number.
+        _releasingStickClaim = finesse != null;
+        if (_releasingStickClaim) TryReleaseStickClaim();
+
+        // Killed rather than committed, and the HUD may already be dark (the
+        // likeliest exit is Resume, which blanks the canvas): make it audible.
+        if (exitBuzz) RefusalBuzz(Hand.Left);
+    }
+
+    private void HandlePhaseChanged(SessionPhase prev, SessionPhase next)
+    {
+        if (_pickerActive) ClosePicker(exitBuzz: true);
+    }
+
+    private void TickPicker()
+    {
+        if (_releasingStickClaim) TryReleaseStickClaim();
+        if (!_pickerActive) return;
+
+        // Phase gate can lapse without a transition event only if flow went
+        // missing; cheap re-check keeps the mode honest.
+        if (flow == null || !flow.CanSeekTrial) { ClosePicker(exitBuzz: true); return; }
+
+        hud?.ShowTrialPicker(_pickerRow);
+    }
+
+    private void TryReleaseStickClaim()
+    {
+        if (input == null || finesse == null) { _releasingStickClaim = false; return; }
+        if (input.LeftStick.magnitude >= input.StickRearmThreshold) return;
+        finesse.InputSuppressed = false;
+        _releasingStickClaim = false;
+    }
+
+    // L stick X = +/-1 trial, L stick Y = +/-5. Both step over CSV numbering
+    // gaps via TryGetAdjacentTrial rather than arithmetic, and never wrap: one
+    // extra auto-repeat past the last trial would otherwise land on the first,
+    // and a committed seek there restarts the protocol.
+    private void HandlePickerStick(QuestControllerInput.StickAxis axis, int sign)
+    {
+        if (!_pickerActive) return;
+        if (axis != QuestControllerInput.StickAxis.LeftX && axis != QuestControllerInput.StickAxis.LeftY) return;
+
+        // Dominant-axis lock. Every axis is thresholded independently at 0.7,
+        // so a 45-degree push (0.707, 0.707) fires X and Y in the SAME frame -
+        // silently stepping 4 or 6 instead of 1 or 5. First axis to fire wins
+        // until it goes quiet for longer than the 200 ms auto-repeat interval.
+        if (_axisLocked && axis != _lockedAxis)
+        {
+            if (Time.time - _lastAxisFireTime < 0.3f) return;
+            _axisLocked = false;
+        }
+        _lockedAxis = axis;
+        _axisLocked = true;
+        _lastAxisFireTime = Time.time;
+
+        int steps = axis == QuestControllerInput.StickAxis.LeftX ? 1 : 5;
+        int candidate = _seekCandidate;
+        int moved = 0;
+        for (int i = 0; i < steps; i++)
+        {
+            if (!flow.TryGetAdjacentTrial(candidate, sign, out int next)) break;
+            candidate = next;
+            moved++;
+        }
+
+        if (moved == 0)
+        {
+            _pickerNote = sign > 0 ? "end of CSV" : "start of CSV";
+            RebuildPickerRow();
+            // Tiny tick, not the refusal buzz: nothing was refused, the list ended.
+            PlayPattern(Hand.Left, pulses: 1, amplitude: 0.2f, onSeconds: 0.03f, gapSeconds: 0f);
+            return;
+        }
+
+        _seekCandidate = candidate;
+        _pickerNote = null;
+        RebuildPickerRow();
+        PlayPattern(Hand.Left, pulses: 1, amplitude: 0.25f, onSeconds: 0.03f, gapSeconds: 0f);
+    }
+
+    // Rebuilt on change, not per frame: PositionOf is an O(n) scan and the HUD
+    // pushes at 6.7 Hz. Messages compose INTO this row - a ShowTransient call
+    // would be masked by the picker's own per-frame push anyway.
+    private void RebuildPickerRow()
+    {
+        int pos = Mathf.Clamp(flow.TrialPositionOf(_seekCandidate), 1, Mathf.Max(1, flow.TrialCount));
+        string note = _pickerNote != null ? $" — <color={ExperimentPalette.MidHex}>{_pickerNote}</color>" : "";
+        _pickerRow = $"<b>Go to trial {_seekCandidate}</b> ({pos}/{flow.TrialCount}) · stick to change · HOLD X to confirm{note}";
+    }
     private void Hint(string msg)
     {
         if (!string.IsNullOrEmpty(msg)) hud?.ShowTransient(msg, 2.5f);
@@ -394,6 +602,7 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
         HoldAction.Redo => Hand.Right,        // R index
         HoldAction.NextTrial => Hand.Right,   // R grip + R index
         HoldAction.CyclePreset => Hand.Both,
+        HoldAction.SeekTrial => Hand.Left,    // X is a left-controller button
         _ => Hand.Both,
     };
 
@@ -422,6 +631,12 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
             case HoldAction.CyclePreset:
                 PlayPattern(Hand.Both, pulses: 3, amplitude: 0.5f, onSeconds: 0.05f, gapSeconds: 0.09f);
                 break;
+            case HoldAction.SeekTrial:
+                // One long then two short, on the LEFT: must not be mistakable
+                // for Redo (2 short right) or Next trial (3 short right), its
+                // neighbours in the same phase.
+                PlaySeekPattern();
+                break;
         }
     }
 
@@ -437,6 +652,33 @@ public sealed class ExperimenterSessionControls : MonoBehaviour
         _pattern = StartCoroutine(PatternCo(hand, pulses, amplitude, onSeconds, gapSeconds, frequency));
     }
 
+
+    /// <summary>Seek confirm: one long left pulse then two short ones. A single
+    /// coroutine because PlayPattern cancels whatever is already running.</summary>
+    private void PlaySeekPattern()
+    {
+        if (!haptics) return;
+        if (_pattern != null) StopCoroutine(_pattern);
+        _pattern = StartCoroutine(SeekPatternCo());
+    }
+
+    private System.Collections.IEnumerator SeekPatternCo()
+    {
+        SetVibration(Hand.Left, 0.85f);
+        _vibrating = true;
+        yield return new WaitForSecondsRealtime(0.22f);
+        StopVibration();
+        yield return new WaitForSecondsRealtime(0.12f);
+        for (int i = 0; i < 2; i++)
+        {
+            SetVibration(Hand.Left, 0.7f);
+            _vibrating = true;
+            yield return new WaitForSecondsRealtime(0.05f);
+            StopVibration();
+            if (i == 0) yield return new WaitForSecondsRealtime(0.07f);
+        }
+        _pattern = null;
+    }
     private System.Collections.IEnumerator PatternCo(Hand hand, int pulses, float amplitude, float onSeconds, float gapSeconds, float frequency)
     {
         for (int i = 0; i < pulses; i++)

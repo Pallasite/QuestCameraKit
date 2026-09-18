@@ -65,11 +65,30 @@ public sealed class SessionFlowController : MonoBehaviour
     public bool CanChangeConfig => Phase == SessionPhase.Setup || Phase == SessionPhase.Ready || Phase == SessionPhase.Paused;
     public bool IsPaused => Phase == SessionPhase.Paused;
     public bool CanLeaveComplete => Phase == SessionPhase.Complete;
+    /// <summary>Absolute trial seek is a between-walks action: set the starting
+    /// trial before StartTrials, or move to any trial while paused. Never mid-walk.</summary>
+    public bool CanSeekTrial => Phase == SessionPhase.Ready || Phase == SessionPhase.Paused;
 
     /// <summary>Manual redos this session (HUD status counter).</summary>
     public int RedoCount { get; private set; }
     /// <summary>Manual trial jumps (next/previous) this session (HUD status counter).</summary>
     public int SkipCount { get; private set; }
+
+    /// <summary>
+    /// True when the loaded trial corresponds to a walk that has actually been
+    /// armed. False for the boot-time Initial load before StartTrials, for a
+    /// Ready-phase seek, and after LeaveComplete reopens on the last trial - in
+    /// all three, a walk_event start row exists for a walk that never ran.
+    ///
+    /// Phase alone cannot answer this: LeaveComplete jumps BEFORE transitioning
+    /// to Paused, so "Paused" does not imply a walk was interrupted. Consumers
+    /// (the walk logger, the skip counter) key off this instead, or they
+    /// fabricate an abandoned walk on the reopen-then-navigate path.
+    ///
+    /// Deliberately NOT cleared by Pause() - a paused walk is still in flight,
+    /// which is what makes a mid-session paused seek correctly count as abandoned.
+    /// </summary>
+    public bool WalkInFlight { get; private set; }
 
     /// <summary>True while a Running-phase redo is waiting for the walker to clear the trigger radius.</summary>
     public bool WaitingForRedoClearance => _waitingForRedoClearance;
@@ -167,6 +186,7 @@ public sealed class SessionFlowController : MonoBehaviour
         obstacleController.AutoReset = true;
         obstacleController.TrialSequenceActive = true;
         obstacleController.ArmObstacle();
+        WalkInFlight = true;   // from here, a loaded trial means a real walk
         TransitionTo(SessionPhase.Running, "start_trials");
         return true;
     }
@@ -214,6 +234,9 @@ public sealed class SessionFlowController : MonoBehaviour
         obstacleController.DisarmObstacle();
         obstacleController.TrialSequenceActive = true;
         _waitingForRedoClearance = false;
+        // Reopened on the last trial, but no walk is in flight - the seek and
+        // skip paths must not log this as an abandoned walk.
+        WalkInFlight = false;
         TransitionTo(SessionPhase.Paused, "leave_complete");
         Hud($"Reopened at trial {trialLoader.MaxTrialNumber} — paused. Navigate trials, then Start to resume.", 5f);
         return true;
@@ -312,6 +335,69 @@ public sealed class SessionFlowController : MonoBehaviour
         return true;
     }
 
+    /// <summary>Raw CSV trial number currently loaded (0 when no sequencer).</summary>
+    public int CurrentTrialNumber => trialSequencer != null ? trialSequencer.CurrentTrialIndex : 0;
+
+    /// <summary>Nearest EXISTING trial number in a direction; gap-correct. Pass-through
+    /// so control surfaces drive trials through this class alone.</summary>
+    public bool TryGetAdjacentTrial(int from, int direction, out int to)
+    {
+        to = from;
+        return trialSequencer != null && trialSequencer.TryGetAdjacentTrial(from, direction, out to);
+    }
+
+    /// <summary>1-based display position of a raw trial number, and the total row
+    /// count. Pass-throughs so control surfaces render "n of M" without their own
+    /// TrialLoader reference.</summary>
+    public int TrialPositionOf(int trialNumber)
+        => trialLoader != null ? trialLoader.PositionOf(trialNumber) : 0;
+    public int TrialCount => trialLoader != null ? trialLoader.TrialCount : 0;
+
+    /// <summary>
+    /// Absolute seek to any trial in the CSV, allowed while Ready or Paused
+    /// (see <see cref="CanSeekTrial"/>). Unlike <see cref="NextTrial"/> this is
+    /// not a step, and it only counts as a skip when it abandons a live walk.
+    ///
+    /// Always leaves the obstacle DISARMED. JumpToTrial calls ResetForRedo,
+    /// whose last act is IsArmed = true, and ObstacleController's proximity
+    /// branch is not gated on TrialSequenceActive - so in Ready, where the
+    /// operator is standing inside the trigger radius finesse-tuning, an armed
+    /// obstacle would perturb in their face, latch HasMoved, and silently void
+    /// the first real walk of the session. LeaveComplete disarms for the same
+    /// reason; do not "simplify" this to match JumpBy's Paused-only disarm.
+    /// </summary>
+    public bool SeekToTrial(int trialNumber)
+    {
+        if (!CanSeekTrial)
+        {
+            Hud("Trial picker works when Ready or Paused");
+            return false;
+        }
+        if (trialSequencer == null || obstacleController == null) return false;
+
+        int from = trialSequencer.CurrentTrialIndex;
+        bool wasLive = WalkInFlight;
+
+        if (!trialSequencer.JumpToTrial(trialNumber))
+        {
+            Hud($"No trial {trialNumber} in the CSV");
+            return false;
+        }
+
+        obstacleController.DisarmObstacle();
+        _waitingForRedoClearance = false;
+
+        // Only a seek that walked away from a live walk is a protocol skip; the
+        // operator copies this count into the lab notebook.
+        if (wasLive) SkipCount++;
+
+        Hud(Phase == SessionPhase.Ready
+            ? $"Trial {trialNumber} loaded — HOLD BOTH triggers to start"
+            : $"Trial {trialNumber} loaded — still paused");
+        Log("trial_seek", $"from={from};to={trialNumber};phase={Phase};abandoned={(wasLive ? 1 : 0)}");
+        return true;
+    }
+
     // ---- event handlers ----
 
     private void HandleTrialLoaded(TrialCondition condition)
@@ -322,6 +408,10 @@ public sealed class SessionFlowController : MonoBehaviour
         {
             obstacleController?.ArmObstacle();
         }
+
+        // A Running load is a real walk in flight; Ready/Paused loads (boot,
+        // seek, reopen) are not. See WalkInFlight.
+        if (Phase == SessionPhase.Running) WalkInFlight = true;
     }
 
     private void HandleSequenceComplete()
@@ -334,6 +424,7 @@ public sealed class SessionFlowController : MonoBehaviour
                 obstacleController.TrialSequenceActive = false;
             }
             _waitingForRedoClearance = false;
+            WalkInFlight = false;
             TransitionTo(SessionPhase.Complete, "sequence_complete");
             Hud("<b>All trials complete</b> — session done");
         }

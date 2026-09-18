@@ -21,7 +21,7 @@ using UnityEngine;
 /// Endpoints:
 ///   GET  /            the dashboard page (self-contained HTML)
 ///   GET  /status      JSON snapshot (cached on the main thread — no cross-thread Unity calls)
-///   POST /action/{startTrials|pause|resume|redo|nextTrial|prevTrial|cyclePreset|recapture|place|toggleDiagnostics|toggleOcclusion|cycleScanProfile|cycleRotationSolver}
+///   POST /action/{startTrials|pause|resume|redo|nextTrial|prevTrial|cyclePreset|recapture|place|toggleDiagnostics|toggleOcclusion|cycleScanProfile|cycleRotationSolver|cycleDisplayHz}
 ///                     enqueued to the main thread; responds 202 immediately
 ///   POST /participant body = ID; written to participant.txt (applies NEXT launch —
 ///                     the current session's CSV is already open)
@@ -70,6 +70,10 @@ public sealed class RemoteConsoleServer : MonoBehaviour
              "these features simply hide when no stereo scanner exists in the scene.")]
     [SerializeField] private StereoAprilTagScanner stereoScanner;
 
+    [Tooltip("Display-rate panel for the cycleDisplayHz action. Auto-resolved; lets an " +
+             "operator A/B 72 vs 90 Hz on the headset without a rebuild. Leave it on 72.")]
+    [SerializeField] private XRDisplayConfigurator displayConfig;
+
     private HttpListener _listener;
     private Thread _thread;
     private volatile bool _running;
@@ -95,6 +99,7 @@ public sealed class RemoteConsoleServer : MonoBehaviour
         if (!scanPolicy) scanPolicy = FindAnyObjectByType<ScanProfilePolicy>();
         if (!tagManager) tagManager = FindAnyObjectByType<AprilTagDisplayManager>();
         if (!stereoScanner) stereoScanner = FindAnyObjectByType<StereoAprilTagScanner>();
+        if (!displayConfig) displayConfig = FindAnyObjectByType<XRDisplayConfigurator>();
     }
 
     private void OnEnable()
@@ -290,6 +295,18 @@ public sealed class RemoteConsoleServer : MonoBehaviour
                         $"rot_solver={next};tag_size_m={stereoScanner.TagSizeMeters.ToString("F3", CultureInfo.InvariantCulture)};reason=set_rot_solver"));
                 });
                 return true;
+            case "cycleDisplayHz":
+                // Ungated on purpose: refresh rate is a comfort setting, not a
+                // condition — it moves nothing in the scene, so it is safe mid-walk.
+                // XRDisplayConfigurator.CycleHz logs its own display_frequency row.
+                _mainThread.Enqueue(() =>
+                {
+                    if (displayConfig == null) return;
+                    displayConfig.CycleHz();
+                    hud?.ShowTransient(
+                        $"Display: {displayConfig.HzLabel} (applied {displayConfig.AppliedHz:0} Hz)", 3f);
+                });
+                return true;
             default: return false;
         }
     }
@@ -431,6 +448,7 @@ public sealed class RemoteConsoleServer : MonoBehaviour
  <button onclick=""act('toggleOcclusion')"">Occlusion</button>
  <button onclick=""act('cycleScanProfile')"">Scan profile</button>
  <button onclick=""act('cycleRotationSolver')"">Rot solver</button>
+ <button onclick=""act('cycleDisplayHz')"">Display Hz</button>
 </div>
 <div style='margin-top:1rem'>
  <input id='pid' placeholder='participant ID (next launch)'>

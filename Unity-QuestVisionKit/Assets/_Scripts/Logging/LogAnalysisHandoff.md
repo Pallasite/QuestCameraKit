@@ -349,8 +349,10 @@ Sparse lifecycle markers. The `subtype` column distinguishes them.
 | `session_start`             | App start, when logger comes alive        | `build=...;scene=...;participant=...;unix_ms=...;schema_version=...;flush_interval_s=...;notes=...` |
 | `session_end`               | Logger OnDisable                          | (empty) |
 | `application_quit`          | App quit                                  | (empty) |
+| `display_frequency`         | Boot, and (2026-08-18) every runtime re-apply | `requested=...;applied=...;supported=0\|1;before=...;available=[72,80,90,...];cpu_level=...;gpu_level=...;reason=boot\|context_menu\|console\|hmd_mounted\|external_change` |
 | `rigid_body_baseline`       | Once after a successful baseline capture  | `mean_distance_m=...;stddev_distance_m=...;mean_rot_deg=...;stddev_rot_deg=...;distance_tolerance_m=...;rotation_tolerance_deg=...;validation_enforced=...;samples=...` |
 | `reconnect_moved`           | A controller reconnected far from its last-known-good pose | `side=L\|R;moved_m=...;warn_threshold_m=...` |
+| `trial_seek` (2026-08-18)   | Operator seeked to an arbitrary trial with the in-headset picker (Ready or Paused only) | `from=...;to=...;phase=Ready\|Paused;abandoned=0\|1` — `abandoned=1` pairs with a `walk_phase=abandoned` row and a `SkipCount` increment; `abandoned=0` means no walk was in flight and no abandoned row was written |
 | `obstacle_placer_lock`      | The `ControllerObstaclePlacer` lock-toggle fired | `locked=0\|1;anchor=0\|1` |
 | `controller_corrector_activated`   | `ControllerDriftCorrector.Activate()` succeeded — anchor reference captured | varies (write-mode + gate config) |
 | `controller_corrector_deactivated` | `ControllerDriftCorrector.Deactivate()` called    | (empty) |
@@ -358,6 +360,30 @@ Sparse lifecycle markers. The `subtype` column distinguishes them.
 | `synth_load_test_start/end` | If the verification harness was run        | `target_events=...;rate_hz=...` or `emitted=...` |
 
 `correction_source` is always `system` for `session_event`s. `mode` is `n/a`.
+
+**Display refresh rate — read this before comparing sessions across dates.**
+`display_frequency` records what refresh rate the session actually ran at, and
+it is the only place that information exists. Two caveats about older files:
+
+- **`applied=` is unreliable before 2026-08-18.** The underlying
+  `ovrp_SetSystemDisplayFrequency` call is fire-and-forget — OVRPlugin discards
+  its result and the runtime applies the change asynchronously — but the old
+  code read the frequency back on the same frame it set it. A fully successful
+  request could therefore be recorded with the *previous* value. Treat
+  pre-2026-08-18 `requested=` as trustworthy and `applied=` as unverified. From
+  2026-08-18 the readback is deferred ~0.25 s.
+- **Before 2026-08-18 the rate was applied only once, at `Start()`.** A
+  mid-session doff/don (visible as an `application_pause`/`application_resume`
+  pair) could silently revert the headset to its system default for the rest of
+  the session, with nothing recorded. Combined with the operator practice of
+  setting refresh rate in the headset's own system settings — a path that left
+  no trace at all — **the effective display rate of pre-2026-08-18 sessions
+  should be treated as unknown.** From 2026-08-18 the rate is app-controlled
+  (default 72 Hz) and re-asserted on HMD mount and on observed drift, each
+  re-apply emitting its own row with a `reason=`.
+
+Frame pacing is a plausible confound for gait data, so sessions that straddle
+this date should not be pooled without checking these rows first.
 
 Example row:
 ```
@@ -428,6 +454,22 @@ walk produces 2–4 rows depending on whether the obstacle moved / reset:
   condition and elapsed `walk_duration_s`. `end` means ONLY "walk completed".
   Pre-2026-08-04 files logged a +1 skip as `end` — cross-check `trial_skip`
   session_events when analyzing older sessions.
+- `walk_phase=abandoned` gating (2026-08-18) — an `abandoned` row is now
+  emitted only when a walk was actually armed, tracked by
+  `SessionFlowController.WalkInFlight` rather than inferred from phase.
+  Pre-2026-08-18 files can contain a **phantom `abandoned` row** for a walk
+  that never ran: `LeaveComplete()` (reopen from COMPLETE) jumps to the last
+  trial before switching to Paused, so a next/prev right afterwards logged an
+  abandoned walk with a duration equal to the operator's deliberation time.
+  Cross-check against `phase_change ... reason=leave_complete`.
+- Orphan `start` rows (2026-08-18) — a `walk_phase=start` row emitted before
+  the first `phase_change ... to=Running` is a **pre-session load, not a
+  walk**, and has no terminator by design. This has always been true of the
+  boot-time load of the lowest trial number; the trial picker's Ready-phase
+  seek makes it routine (one orphan `start` per seek, each superseding the
+  last). Take the LAST such row per index. The same effect inflates the first
+  walked trial's `walk_duration_s`, which has always included Setup+Ready and
+  now starts at the last pre-session seek.
 
 `walk_index` is the trial number from `TrialCondition.TrialNumber`.
 

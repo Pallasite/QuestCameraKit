@@ -206,10 +206,12 @@ Session-flow events (UX pass, all additive — still schema v1):
 | `config_change` (rotation-solver variant; 2026-07-29, additive) | AprilTag rotation-solver boot record + every solver cycle | `rot_solver=<NaiveCross\|Kabsch\|KabschRescaledRadial\|KabschTemplateFit\|StereoPnP>;tag_size_m=<F3>;reason=boot\|set_rot_solver` — emitted by `AprilTagSolverComparisonLogger` (boot), `RemoteConsoleServer` (web-console cycle), and `ExperimenterSessionControls` (R-grip+Y chord cycle; 2026-08-03, additive). This is the join key for `apriltag_solver_comparison.csv`; note `rot_solver` (scanner pose solver) is a different axis from `solver` (placement TagSolverMode) in the row above. |
 | `trial_redo` | experimenter redid a fouled walk | `index=..;phase=Running\|Paused` |
 | `trial_skip` | experimenter manually jumped to the next/previous trial (chord or web console; 2026-07-14, additive) | `from=..;to=..;phase=Running\|Paused` — `to` is the nearest EXISTING trial number in that direction (2026-08-04: navigation steps over CSV numbering gaps) |
+| `trial_seek` (2026-08-18, additive) | experimenter jumped to an ARBITRARY trial with the in-headset trial picker (R-grip+X, HOLD X to commit) | `from=..;to=..;phase=Ready\|Paused;abandoned=0\|1` — absolute seek, not a step, and only allowed between walks. `abandoned=1` means a live walk was left behind (a matching `walk_phase=abandoned` row exists and `SkipCount` incremented); `abandoned=0` means no walk was in flight (a Ready-phase seek before the session starts, or a seek right after reopening from Complete) and there is deliberately NO `abandoned` walk row. |
 | `application_pause` / `application_resume` | headset doffed/donned (OS pause) | (empty) — pause also forces a writer flush |
 | `trial_csv` (2026-08-04, additive) | once per trial-CSV load | `source=runtime\|template;rows=..;min=..;max=..;duplicates=..;gaps=..;invalid_lines=..` — structural summary of the loaded file; nonzero `duplicates`/`gaps`/`invalid_lines` also shows on the Setup HUD |
 | `trial_csv_error` (2026-08-04, additive) | trial CSV missing or unparseable | the error text (also shown on the Setup HUD) |
 | `finesse_nudge` / `finesse_reset` (2026-08-04, additive) | every finesse thumbstick nudge / offset reset | `axis=X\|Z\|Y\|yaw;step_m=..\|step_deg=..` or `kind=position\|rotation\|all`, plus `fine=0\|1;local_pos=x\|y\|z;local_yaw_deg=..` (the RESULTING offset — reconstruct the offset timeline without integrating deltas). Emitted unconditionally: the finesse layer moves the primary measurement, so it is never mutable without evidence. Nudges are also phase-gated to Setup/Ready/Paused when a `SessionFlowController` exists. |
+| `display_frequency` (retro-documented 2026-08-18; emitted since the component landed) | boot, and from 2026-08-18 on every runtime re-apply | `requested=..;applied=..;supported=0\|1;before=..;available=[72,80,90,..];cpu_level=..;gpu_level=..;reason=boot\|context_menu\|console\|hmd_mounted\|external_change` — the display refresh the session actually ran at, and the only record of it. **`applied=` is unverified in pre-2026-08-18 files** (the set is asynchronous but was read back on the same frame), and before that date the rate was applied only at `Start()`, so a mid-session doff/don could silently revert it. `cpu_level`/`gpu_level` changed from ints (0..4) to `ProcessorPerformanceLevel` names (`PowerSavings`/`SustainedLow`/`SustainedHigh`/`Boost`) on 2026-08-18. See `LogAnalysisHandoff.md` before pooling sessions across that date. |
 | `conventions` (2026-08-04, additive) | once at boot | `rot_semantics=yaw_flattened;perturb_axis=horizontal_walk_dir;trigger_metric=xz;reset_metric=3d;pivot=prefab_origin_on_tag_plane;tag_size_m=..;rot_solver=..;sampler_hz=..;pending_max_age_s=..` — the measurement semantics of this build, so a CSV is self-describing without git archaeology. Note `trigger_metric=xz` vs `reset_metric=3d`: the trigger check projects to the floor plane while the auto-reset uses full 3-D head distance (so an eye-height ~1.6 m head must be ~2.5 m out on the floor for a 3 m reset radius) — a deliberate self-report of an asymmetry that predates this row. |
 
 Walk-row semantics under redo/skip (2026-08-04 — `abandoned` introduced): a
@@ -223,6 +225,19 @@ not distinguish a skip from a natural advance), and the walk after such a
 skip could be missing its real `end` row — treat completion counts and
 per-trial durations from those files with suspicion, using `trial_skip`
 events to identify the affected walks.
+
+Walk-row semantics under seek (2026-08-18): the trial picker's absolute seek
+emits `abandoned` only when a walk was actually in flight — tracked by
+`SessionFlowController.WalkInFlight`, not by phase. Phase cannot answer it:
+`LeaveComplete()` jumps to the last trial BEFORE transitioning to Paused, so
+"Paused" does not imply an interrupted walk. **This also fixes existing
+next/prev navigation:** pre-2026-08-18 files can contain a phantom
+`walk_phase=abandoned` row for a walk that never ran, when the operator
+reopened from Complete and then navigated. Consequence to expect in new files:
+a `walk_phase=start` row emitted before the first `phase_change ... to=Running`
+is a pre-session load, not a walk — a Ready-phase seek makes those routine
+(one per seek). Take the LAST such row per index and discard earlier ones;
+they have no terminator by design.
 
 `session_start.detail` gains `participant_source=file|inspector` (whether
 `participant.txt` on the device overrode the Inspector participant ID).
@@ -324,3 +339,22 @@ On the Quest, sessions land in `Application.persistentDataPath` which maps to
   `Tools/Validate-Session.ps1` is the structural-integrity contract check for
   a pulled bundle (run automatically by `Pull-Sessions.ps1`; carries its own
   copy of the 58-column header and must be updated with any column change).
+- **v1 (additive, no bump — 2026-08-18, display-rate pass)** — the
+  `display_frequency` session_event is retro-documented (it has been emitted
+  since the component landed but appeared in neither doc) and gains a `reason=`
+  key, because it is now emitted on every runtime re-apply rather than only at
+  boot. The app now owns the display refresh rate (default **72 Hz**, down from
+  a 90 Hz request) and re-asserts it on HMD mount and on observed drift, closing
+  a hole where a mid-session doff/don silently reverted the rate for the rest of
+  the session. Three data-contract consequences for older files: `applied=` is
+  **unverified** before this date (the underlying set is asynchronous and was
+  read back on the same frame — a successful request could record the old
+  value); the effective rate of any pre-2026-08-18 session should be treated as
+  **unknown**, since operators set it in headset system settings, which left no
+  trace; and `cpu_level`/`gpu_level` change from ints (0..4) to
+  `ProcessorPerformanceLevel` names. The perf levels also moved from the
+  deprecated `OVRPlugin.cpuLevel` ints to `suggestedCpuPerfLevel` — on the
+  OpenXR loader this project uses, the old ints called a legacy entry point that
+  did nothing, so **CPU/GPU levels in pre-2026-08-18 sessions were inert
+  regardless of what the scene serialized**. No columns changed;
+  `Tools/Validate-Session.ps1` is unaffected.

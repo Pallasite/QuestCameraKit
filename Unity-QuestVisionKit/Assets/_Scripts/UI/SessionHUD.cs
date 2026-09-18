@@ -72,6 +72,8 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
     private string _holdLabel;
     private float _holdProgress;
     private float _holdExpiry;
+    private string _pickerText;
+    private float _pickerExpiry;
 
     // Walk popup ("Walk n") — delayed canvas takeover while Running-hidden.
     private string _walkPopupMessage;
@@ -135,6 +137,18 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
         _holdLabel = label;
         _holdProgress = Mathf.Clamp01(t01);
         _holdExpiry = Time.time + 0.25f;
+    }
+
+    /// <summary>Trial-picker candidate readout; call every frame while the picker
+    /// is open, like ShowHoldProgress. Self-expires when the picker stops pushing.
+    /// Ranks BELOW hold progress (the commit bar carries the candidate in its own
+    /// label) and ABOVE plain transients - so the picker must compose its own
+    /// messages into this string rather than calling ShowTransient, which it
+    /// would mask anyway.</summary>
+    public void ShowTrialPicker(string text)
+    {
+        _pickerText = text;
+        _pickerExpiry = Time.time + 0.25f;
     }
 
     /// <summary>Toggle the diagnostics zone (and force the tag wireframe visible while on).</summary>
@@ -356,7 +370,7 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
             case SessionPhase.Ready:
                 _sb.Append("Placed ✓  Fine-tune with the thumbsticks (L grip = mm steps).\n")
                    .Append("<b>HOLD BOTH triggers</b> to start trials.\n")
-                   .Append("<size=80%>R-grip + L trigger: re-place · R-grip + Start: change condition</size>");
+                   .Append("<size=80%>R-grip + L trigger: re-place · R-grip + Start: change condition · R-grip + X: pick start trial</size>");
                 break;
 
             case SessionPhase.Running:
@@ -367,7 +381,8 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
                 break;
 
             case SessionPhase.Paused:
-                _sb.Append("<b>PAUSED</b>\nPress Start to resume · HOLD the RIGHT trigger to redo this trial.");
+                _sb.Append("<b>PAUSED</b>\nPress Start to resume · HOLD the RIGHT trigger to redo this trial.\n")
+                   .Append("<size=80%>R-grip + X: jump to another trial</size>");
                 break;
 
             case SessionPhase.Complete:
@@ -411,6 +426,16 @@ public sealed class SessionHUD : MonoBehaviour, IHudTransientSink
             return _sb.ToString();
         }
         _holdLabel = null;
+
+        // Picker readout sits between hold progress and transients: visible while
+        // the picker is open, but the commit hold still wins (its label carries
+        // the candidate).
+        if (_pickerText != null && Time.time < _pickerExpiry)
+        {
+            _sb.Append(_pickerText);
+            return _sb.ToString();
+        }
+        _pickerText = null;
 
         if (_transientMessage != null && Time.time < _transientExpiry)
         {

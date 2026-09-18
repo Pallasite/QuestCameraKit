@@ -285,7 +285,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a70f85297d541d742a58e0e6e8220731, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::XRDisplayConfigurator
-  targetDisplayHz: 90
+  targetHz: 0
+  reassertOnExternalChange: 1
+  confirmDelaySeconds: 0.25
   cpuLevel: 2
   gpuLevel: 2
 --- !u!4 &131859730
@@ -1026,6 +1028,7 @@ MonoBehaviour:
   scanPolicy: {fileID: 0}
   tagManager: {fileID: 0}
   stereoScanner: {fileID: 0}
+  displayConfig: {fileID: 0}
 --- !u!114 &1146725265
 MonoBehaviour:
   m_ObjectHideFlags: 0

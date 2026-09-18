@@ -39,11 +39,20 @@ you: a floating panel always says what to do next.
    or while paused; during walks the sticks are locked (the panel says so if
    you try). Every nudge is recorded in the data automatically.
 5. Made a mess? **HOLD R-grip + LEFT trigger** to clear and place again.
+6. **Starting somewhere other than the first trial?** (Participant arrives
+   mid-protocol, or you are repeating a block.) **PRESS R-grip + X** to open
+   the trial picker. Push the **left thumbstick left/right** to step one trial
+   at a time, **up/down** to jump five at a time — the panel shows
+   "Go to trial 12 (13/24)". **HOLD X** for ~1 second to confirm; you feel one
+   long then two short buzzes in the left hand. R-grip + X again closes the
+   picker without changing anything. While the picker is open the thumbsticks
+   move the *trial number*, not the obstacle — close it before fine-tuning
+   again.
 
 ## Starting the walks
 
-6. Hand the headset to the participant (keep both controllers).
-7. **HOLD BOTH triggers** for ~1 second → RUNNING. From here everything is
+7. Hand the headset to the participant (keep both controllers).
+8. **HOLD BOTH triggers** for ~1 second → RUNNING. From here everything is
    automatic: the obstacle reacts as the participant walks, resets after each
    pass, and moves to the next trial. The panel hides during walks so the
    participant isn't distracted.
@@ -60,6 +69,12 @@ you: a floating panel always says what to do next.
 - **Skip a trial?** → **HOLD R-grip + RIGHT trigger** to jump to the next
   trial without completing the current walk. (Going *backward* is web-console
   only — see below.)
+- **Need to jump to a different trial mid-session?** → Pause first (Start),
+  then **R-grip + X** opens the same trial picker described in step 6; **HOLD
+  X** to confirm. Whatever walk was in progress is recorded as abandoned, and
+  the skip counter goes up. The picker closes by itself if you resume while
+  it's open (you'll feel the long dull "cancelled" buzz) — reopen it rather
+  than assuming it's still there.
 - **Break needed?** → **PRESS the menu button (Start)** to pause. Press again
   to resume. While paused you can also redo, or change the experimental
   condition (**HOLD R-grip + Start**).
@@ -85,6 +100,9 @@ you feel one **long dull buzz** instead, never the success pattern.
 | 2 strong **both** | Trials started (or session reopened from Complete) |
 | 2 short **right** | Redo armed |
 | 3 short **right** | Skipped to next trial |
+| 2 soft **left** | Trial picker opened |
+| 1 **long** + 2 short **left** | Jumped to the trial you picked |
+| 1 tiny tick while picking | You are at the first/last trial in the file |
 | 3 soft **both** | Condition preset changed |
 | 1 **long strong both** | **PAUSED** |
 | 2 short **both** (softer) | Resumed |

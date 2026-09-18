@@ -10,6 +10,52 @@ over a 45-90 min session (not a hard <1 cm guarantee).
 
 ---
 
+## UPDATE 2026-08-18 — Display rate is now app-owned (default 72 Hz)
+
+Field observation: capping the headset to 72 Hz felt markedly smoother than the
+90 Hz the app was requesting, where the frame rate visibly wobbled in the 80-90
+range. The operator was doing this in the **headset's own system settings** — an
+out-of-band step that nothing recorded, so the effective refresh rate of past
+sessions is unknown.
+
+`XRDisplayConfigurator` on the `Display Config` root object is now the operator
+panel for this. Key points:
+
+- **Default is 72 Hz**, as an Inspector dropdown (`DisplayHz` enum) rather than
+  a free float that silently no-ops on an unsupported value. The reason is
+  frame *budget*, not frame count: 13.9 ms per frame instead of 11.1 ms, ~25%
+  more headroom for a renderer that is main-thread-bound in AprilTag detection
+  bursts. A steady 72 beats an intermittent 90 for a walking participant.
+- **Do NOT set refresh rate in headset system settings any more.** That path is
+  invisible to the data and now fights the app's request.
+- **Re-asserted on HMD mount and on observed drift** (capped, so it never
+  ping-pongs with the OS). Previously it applied once in `Start()`, so a
+  mid-session doff/don could silently revert the rate for the rest of the run.
+- **Web console → "Display Hz"** cycles 72→80→90→120 on device for A/B testing
+  without a rebuild; `[ContextMenu]` entries do the same in the Editor.
+- Two gotchas found and fixed in the same pass, both worth remembering:
+  - `ovrp_SetSystemDisplayFrequency` is **fire-and-forget** — OVRPlugin discards
+    the result and the change lands asynchronously via `DisplayRefreshRateChanged`.
+    The old same-frame readback meant `applied=` in the CSV could record the old
+    value on a *successful* request. The confirm is now deferred ~0.25 s.
+  - The project runs the **OpenXR loader** (`com.unity.xr.oculus` isn't even
+    installed — `Assets/XR/Settings/OculusSettings.asset` is a dead leftover, so
+    its contradictory `TargetQuest3: 0` flags are harmless). On that path the
+    deprecated `OVRPlugin.cpuLevel`/`gpuLevel` ints call a legacy entry point
+    that **does nothing** — the CPU/GPU levels every scene serialized have been
+    inert. Now on `suggestedCpuPerfLevel`/`suggestedGpuPerfLevel`, with
+    `XrPerformanceSettingsFeature Android` enabled in `OpenXRPackageSettings`
+    (it was off, which would have kept them inert anyway).
+  - Note the modern API's sustained ceiling **is** `SustainedHigh`, which is
+    also the SDK default. `Boost` exists but is a short-burst level the runtime
+    may throttle, so there is no "crank it to max" setting that is safe to hold
+    for a 45-90 min session.
+- The two non-build scenes (`- Lifted`, `Triangle Constellation …`) still carry
+  the orphaned `targetDisplayHz: 90` key. Unity ignores it and they fall to the
+  72 Hz default — deliberate, the enum's 0 ordinal is 72 for exactly this reason.
+
+---
+
 ## UPDATE 2026-07-14 — Field-test fix pass (user feedback, 10 items)
 
 First real field test (grad-student experimenter) surfaced 10 issues; all
@@ -141,6 +187,16 @@ simple single/double-AprilTag placement flow. All work below is committed in
      Y chosen because it is bound to nothing project-wide — survives a
      ConstellationDriftCorrector returning and reclaiming R-grip+A/B).
      Finesse owns sticks/grips/A/B. Previous-trial is web-console only.
+     **Trial picker (2026-08-18):** PRESS R-grip + X opens/closes an exclusive
+     picker in Ready/Paused; L stick X = +/-1 trial, L stick Y = +/-5 (both
+     gap-correct, clamped, never wrapping); HOLD X commits via
+     `SessionFlowController.SeekToTrial(int)`. Commit is X and NOT the R index
+     trigger because that is Redo while Paused and the picker's likeliest exit
+     (Resume) blanks the HUD — a stale-mode hold would fire a real redo
+     unnoticed. While open it claims the L stick from ObstacleFinesseController
+     (`InputSuppressed`) and only releases once the stick re-centres, because
+     QuestControllerInput's fire/rearm latch is shared across subscribers.
+     Any phase change closes the picker with the refusal buzz.
    - `TrialLoopActivator.cs` — **arms the trial loop. Nothing else in the
      project ever set IsArmed/AutoReset/TrialSequenceActive — that is why walks
      never completed in past field sessions.** Also Pause()/Resume().

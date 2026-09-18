@@ -38,6 +38,18 @@ public class QuestControllerInput : MonoBehaviour
     public bool WasPressedThisFrame(OVRInput.Button b) => OVRInput.GetDown(b);
     public bool WasReleasedThisFrame(OVRInput.Button b) => OVRInput.GetUp(b);
 
+    /// <summary>
+    /// Raw analog thumbstick, for consumers that need magnitude rather than the
+    /// discretized fire events - e.g. holding an input claim until the stick has
+    /// returned to neutral, since the fire/rearm latch below is global per axis
+    /// and not per subscriber. Read-only view; discretization is unaffected.
+    /// </summary>
+    public Vector2 LeftStick => OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick);
+    public Vector2 RightStick => OVRInput.Get(OVRInput.Axis2D.SecondaryThumbstick);
+
+    /// <summary>Deflection below which an axis re-arms; consumers releasing a stick claim should wait for this.</summary>
+    public float StickRearmThreshold => stickRearmThreshold;
+
     private void Update()
     {
         var l = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick);

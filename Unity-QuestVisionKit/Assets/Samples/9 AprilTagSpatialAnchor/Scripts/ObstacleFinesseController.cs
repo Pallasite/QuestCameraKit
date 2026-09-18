@@ -154,6 +154,16 @@ public class ObstacleFinesseController : MonoBehaviour
     // Running no. Null flow (constellation scenes) falls open.
     private bool NudgingAllowed => flow == null || flow.CanChangeConfig;
 
+    /// <summary>
+    /// Set by a control surface that has temporarily claimed the thumbsticks
+    /// (the trial picker in ExperimenterSessionControls). Local guard in the
+    /// DenyIfGated style rather than disabling the component: this project has
+    /// no input-owner concept, and toggling `enabled` would desync the
+    /// OnStickFire subscription. Silent by design - the claimant owns the HUD
+    /// row while it holds the sticks.
+    /// </summary>
+    public bool InputSuppressed { get; set; }
+
     private float _nextDenyHintTime;
 
     private bool DenyIfGated()
@@ -225,6 +235,11 @@ public class ObstacleFinesseController : MonoBehaviour
     private void Update()
     {
         if (!input) return;
+
+        // Another surface owns the sticks and face buttons right now (trial
+        // picker). One early return covers the target toggle, the A/B resets
+        // and the calibration chords.
+        if (InputSuppressed) return;
 
         // Target switch (no modifier — defaults to L thumbstick click). Runs
         // before all the grip-modified chords so it can't be eaten by them.
@@ -309,6 +324,7 @@ public class ObstacleFinesseController : MonoBehaviour
 
     private void HandleStickFire(QuestControllerInput.StickAxis axis, int sign)
     {
+        if (InputSuppressed) return;   // silent: the claimant owns the feedback
         if (DenyIfGated()) return;
         var target = Target;
         if (!target) return;

@@ -51,11 +51,17 @@ public sealed class SessionLoggerTrialSubscriber : MonoBehaviour
     // completion handler then skips exactly one callback, instead of emitting a
     // bogus ~0-duration end row for the freshly-started walk.
     private bool _completionConsumed;
+    // Read-only: distinguishes "abandoned a live walk" from "changed which walk
+    // comes next". Phase cannot answer that (LeaveComplete reopens Paused with no
+    // walk in flight), so the flow controller owns the latch. Optional - a null
+    // flow falls open to the pre-existing behaviour.
+    private SessionFlowController _flow;
 
     private void Awake()
     {
         if (!trialSequencer) trialSequencer = FindObjectOfType<TrialSequencer>();
         if (!obstacleController) obstacleController = FindObjectOfType<ObstacleController>();
+        if (!_flow) _flow = FindObjectOfType<SessionFlowController>();
     }
 
     private void OnEnable()
@@ -99,8 +105,14 @@ public sealed class SessionLoggerTrialSubscriber : MonoBehaviour
             EmitEnd("end");
             _completionConsumed = true;
         }
-        else if (_endPending && reason == TrialLoadReason.Jump)
+        else if (_endPending && reason == TrialLoadReason.Jump && (_flow == null || _flow.WalkInFlight))
         {
+            // Guarded on a walk having actually been armed. Counterexample that
+            // forced this: LeaveComplete jumps to the last trial BEFORE moving to
+            // Paused, so a following next/prev/seek used to emit an abandoned row
+            // for a walk that never ran. Ordering is safe - WalkInFlight only
+            // flips in StartTrials / HandleSequenceComplete / LeaveComplete, all
+            // outside the load that this handler observes.
             // Deliberately abandoned walk (manual next/prev): explicit
             // abandoned row, never an end row — "end" keeps meaning "walk
             // completed". No completion callback follows a jump, so

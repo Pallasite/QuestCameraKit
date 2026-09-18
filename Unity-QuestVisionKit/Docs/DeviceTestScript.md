@@ -43,6 +43,18 @@ phases 0–2 and 7–8 (untethered for the walk phases).
 - [ ] Ready panel: fine-tune with sticks; **A once** → "Press A again…"
       hint; **A twice** → position zeroed. L-stick click → "Finesse target
       is fixed in this scene" (no fake switch confirmation).
+- [ ] **Trial picker (Ready).** R-grip + X → **2 soft left**, panel shows
+      "Go to trial N (n/M)". L stick left/right steps 1, up/down steps 5;
+      on a CSV with a gap the number **steps over** the gap and **clamps** at
+      both ends (tiny tick, never wraps to the other end). HOLD X →
+      **1 long + 2 short left**; panel shows the new trial.
+- [ ] **The arming check (do not skip).** Stand INSIDE the trigger distance
+      and seek in Ready: the obstacle must **not** move, then start trials and
+      confirm the first walk perturbs normally. (A seek that left the obstacle
+      armed would silently void the first walk.)
+- [ ] **Stick handback.** Open the picker, hold the L stick fully deflected,
+      press R-grip + X to close, and keep holding: the obstacle must **not**
+      drift. Release, then confirm nudges work again.
 
 ## 2. Occlusion + recenter (fix-pass items)
 
@@ -75,15 +87,41 @@ phases 0–2 and 7–8 (untethered for the walk phases).
       locked (hint only when panel visible); during Paused → nudges work and
       buzz per step.
 - [ ] Press Start again: **2 short both** = resumed.
+- [ ] **Trial picker (Paused).** Pause mid-session, seek from trial A to a
+      distant trial B, resume: the participant walks B. Skip counter goes up
+      by 1.
+- [ ] **Picker auto-exit.** Open the picker while paused, then press Start to
+      resume: **1 long dull buzz** (cancelled). Now HOLD the R trigger — it
+      must perform a normal **redo** (2 short right), proving the modes are
+      cleanly separated.
 - [ ] R-grip + Y: **2 left** ticks; later CSV shows `reason=set_rot_solver`
       config_change rows (cycle all 5 modes once if doing the solver pass).
 
-## 4. Perf (the async-detection fix-pass item)
+## 4. Perf + frame pacing (72 Hz pass)
 
-- [ ] fps ≥ ~90 inside the ~1.4 m scan gate during trials (was 60–70);
-      no `ProcessImage` on the main thread if profiling.
-- [ ] Pose sampler on: no measurable fps change. (If chasing frames, it is
+The app now owns the display refresh rate (`Display Config` →
+`XRDisplayConfigurator`, default **72 Hz**). The goal is no longer "more fps" —
+it is *uniform* frame delivery. 72 Hz gives the renderer 13.9 ms per frame
+instead of 11.1 ms, which is the point.
+
+- [ ] **Reset the headset's own Settings → Display refresh to its default
+      before this pass.** The whole point is that the app sets the rate; a
+      hand-set 72 would mask a failed request.
+- [ ] Boot logcat: `[XRDisplayConfigurator] requesting target=72Hz
+      supported=True ... available=[72,80,90,...]`, then ~0.25 s later
+      `confirmed applied=72Hz`. A `request NOT honored` warning means the
+      headset is overriding the app — STOP, nothing below is meaningful.
+- [ ] Frame pacing during trials inside the ~1.4 m scan gate is subjectively
+      steady, with the 80–90 fps wobble gone. No `ProcessImage` on the main
+      thread if profiling.
+- [ ] Optional A/B: web console → **Display Hz** cycles 72→80→90→120. Walk two
+      trials at 90, two at 72, and have the wearer say which felt smoother
+      without being told which is active. Each leg writes a
+      `display_frequency` row with `reason=console`. Leave it on 72.
+- [ ] Pose sampler on: no measurable change. (If chasing frames, it is
       `Obstacle Placement System → Applied Sample Rate Hz`, default 2.)
+- [ ] Battery % at start/end vs. the old 90 Hz baseline — 72 Hz should improve
+      it. Note the result either way (see phase 8).
 
 ## 5. Interruption (Tier 0 watchdogs)
 
@@ -91,6 +129,10 @@ phases 0–2 and 7–8 (untethered for the walk phases).
       resume — next reset does NOT apply a stale pre-break correction
       (logcat: "Deferred correction skipped: proposal … old" if one was
       held).
+- [ ] Same doff/don: a `display_frequency` row appears with
+      `reason=hmd_mounted` and `applied=72`. *** This is the regression the
+      72 Hz change exists to prevent — before it, a doff/don could silently
+      revert the headset to its default rate for the rest of the session. ***
 - [ ] Cover both cameras with a hand for 10 s during Setup — detection
       resumes when uncovered; if a "GPU readback … pending" warning ever
       appears it must stop within a few seconds (else note it).
@@ -102,6 +144,9 @@ phases 0–2 and 7–8 (untethered for the walk phases).
 - [ ] HOLD both triggers on Complete → reopens **paused** at the last trial
       ("Reopen session" label on the hold bar); navigate, resume, complete
       again.
+- [ ] After reopening, use the picker to seek back several trials, then pull
+      the CSV: there must be **no** `walk_phase=abandoned` row for the last
+      trial and the skip count must be unchanged (`trial_seek ... abandoned=0`).
 
 ## 7. Pull + validate (USB)
 
@@ -114,6 +159,11 @@ phases 0–2 and 7–8 (untethered for the walk phases).
       through each walk (timestamps inside walk start→end spans) at ~2 Hz.
 - [ ] Walk rows: skipped trial shows `walk_phase=abandoned` (not `end`);
       the final completed walk HAS its `end` row.
+- [ ] `trial_seek` rows match what you did: `abandoned=1` for the paused
+      mid-session seek (with a matching `walk_phase=abandoned`), `abandoned=0`
+      for the Ready seek and the post-reopen seek (with NO abandoned row).
+- [ ] No `walk_phase=moved` row carries a timestamp from before the first
+      `phase_change ... to=Running`.
 - [ ] Every finesse nudge/reset from phase 1/3 appears as
       `finesse_nudge`/`finesse_reset` rows.
 - [ ] Corrections shrink-then-plateau per `SingleTagObstacleHandoff.md`.
